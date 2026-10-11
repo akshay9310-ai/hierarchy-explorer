@@ -1,0 +1,38 @@
+# Build artifacts and binaries
+*.exe
+*.o
+*.obj
+*.a
+*.so
+*.dll
+*.dylib
+bin/
+build/
+dist/
+
+# Visual Studio Code / IDEs
+.vscode/
+.idea/
+*.suo
+*.user
+
+# Operating System Files
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Frontend dependencies and logs
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Test and temporary outputs
+backend/*.exe
+backend/tests/*.exe
+backend/*.o
+backend/tests/*.o
