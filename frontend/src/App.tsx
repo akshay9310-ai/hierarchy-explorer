@@ -1,6 +1,13 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import type { HierarchyData, HierarchyMode, TraversalResult, TraversalType, BackendStatus } from './api/types';
-import { checkBackendStatus, fetchBackendTraversal } from './api/client';
+import type {
+  HierarchyData,
+  HierarchyMode,
+  TraversalResult,
+  TraversalType,
+  BackendStatus,
+  ApiState,
+} from './api/types';
+import { getBackendStatus } from './api/client';
 import { computeBinaryTraversal } from './utils/binaryTraversal';
 import { Navbar } from './components/layout/Navbar';
 import { QuickInfoBar } from './components/editor/QuickInfoBar';
@@ -105,8 +112,14 @@ export function App() {
   const [mode, setMode] = useState<HierarchyMode>('org');
   const [activeTraversal, setActiveTraversal] = useState<TraversalType | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [backendStatus, setBackendStatus] = useState<BackendStatus | null>(null);
-  const [isChecking, setIsChecking] = useState<boolean>(true);
+
+  // Centralized backend connection lifecycle
+  const [backendState, setBackendState] = useState<ApiState<BackendStatus>>({
+    status: 'idle',
+    data: null,
+    error: null,
+    statusCode: null,
+  });
 
   // Traversal sequence & stepper state
   const [traversalResult, setTraversalResult] = useState<TraversalResult | null>(null);
@@ -114,10 +127,9 @@ export function App() {
   const [currentStepIndex, setCurrentStepIndex] = useState<number>(-1);
 
   const fetchStatus = useCallback(async () => {
-    setIsChecking(true);
-    const result = await checkBackendStatus();
-    setBackendStatus(result);
-    setIsChecking(false);
+    setBackendState(prev => ({ ...prev, status: 'loading' }));
+    const result = await getBackendStatus();
+    setBackendState(result);
   }, []);
 
   useEffect(() => {
@@ -175,10 +187,8 @@ export function App() {
     }
   }, [selectedNodeId, activeHierarchy]);
 
-  // Execute traversal whenever activeTraversal, mode, or activeHierarchy changes
+  // Execute traversal whenever activeTraversal or activeHierarchy changes
   useEffect(() => {
-    let isCancelled = false;
-
     if (!activeTraversal) {
       setTraversalResult(null);
       setTraversalSource(null);
@@ -186,31 +196,14 @@ export function App() {
       return;
     }
 
-    const loadTraversal = async () => {
-      // 1. Prefer calling backend traversal API if active (Requirement 3)
-      const backendResult = await fetchBackendTraversal(mode, activeTraversal);
-      if (isCancelled) return;
-
-      if (backendResult && backendResult.order && backendResult.order.length > 0) {
-        setTraversalResult(backendResult);
-        setTraversalSource('backend');
-        setCurrentStepIndex(0);
-      } else {
-        // 2. Fall back to isolated client-side traversal utility (Requirement 4)
-        const clientResult = computeBinaryTraversal(activeHierarchy, activeTraversal);
-        if (isCancelled) return;
-        setTraversalResult(clientResult);
-        setTraversalSource('client');
-        setCurrentStepIndex(clientResult.order.length > 0 ? 0 : -1);
-      }
-    };
-
-    loadTraversal();
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [activeTraversal, mode, activeHierarchy]);
+    // Per Milestone 1 architecture, backend implements /api/status.
+    // Traversal is computed via the isolated client-side LCRS binary traversal engine
+    // and explicitly labeled as client-side fallback (Requirement 4 & 8).
+    const clientResult = computeBinaryTraversal(activeHierarchy, activeTraversal);
+    setTraversalResult(clientResult);
+    setTraversalSource('client');
+    setCurrentStepIndex(clientResult.order.length > 0 ? 0 : -1);
+  }, [activeTraversal, activeHierarchy]);
 
   // Stepper Controls Handlers
   const handleNextStep = () => {
@@ -254,9 +247,10 @@ export function App() {
       <Navbar
         mode={mode}
         onModeChange={handleModeChange}
-        status={backendStatus}
-        isChecking={isChecking}
+        status={backendState.data}
+        isChecking={backendState.status === 'loading'}
         onRefreshStatus={fetchStatus}
+        errorMessage={backendState.error}
       />
 
       <main className="main-content">
@@ -280,7 +274,7 @@ export function App() {
         <QuickInfoBar
           mode={mode}
           activeTraversal={activeTraversal}
-          status={backendStatus}
+          status={backendState.data}
         />
 
         <div className="workspace-grid">
