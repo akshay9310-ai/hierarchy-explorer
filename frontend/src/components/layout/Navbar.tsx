@@ -7,6 +7,7 @@ interface NavbarProps {
   status: BackendStatus | null;
   isChecking: boolean;
   onRefreshStatus: () => void;
+  errorMessage?: string | null;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -15,6 +16,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   status,
   isChecking,
   onRefreshStatus,
+  errorMessage,
 }) => {
   const isOnline = status !== null;
 
@@ -58,7 +60,16 @@ export const Navbar: React.FC<NavbarProps> = ({
       </div>
 
       <div className="navbar-actions">
-        <div className="status-badge-container" title={status ? `${status.service} (${status.compiler})` : 'Backend server offline at localhost:8080'}>
+        <div
+          className="status-badge-container"
+          title={
+            status
+              ? `${status.service} (${status.compiler}) — Connected via WinSock2 on port 8080`
+              : errorMessage
+              ? `Backend Offline: ${errorMessage}`
+              : 'Backend server offline at localhost:8080'
+          }
+        >
           <span className={`status-indicator-dot ${isOnline ? 'online' : 'offline'}`} />
           <span className="status-text">
             {isChecking ? 'Checking...' : isOnline ? 'Backend Online' : 'Backend Offline'}
@@ -69,6 +80,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             onClick={onRefreshStatus}
             disabled={isChecking}
             title="Recheck backend health"
+            aria-label="Recheck backend health"
           >
             ↻
           </button>
@@ -77,3 +89,5 @@ export const Navbar: React.FC<NavbarProps> = ({
     </header>
   );
 };
+
+export default Navbar;

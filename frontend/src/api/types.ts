@@ -2,12 +2,36 @@ export type HierarchyMode = 'org' | 'family';
 
 export type TraversalType = 'preorder' | 'inorder' | 'postorder';
 
+/**
+ * Health & Backend Status Response per docs/api-contract.md (GET /api/status)
+ */
 export interface BackendStatus {
   status: string;
   service: string;
   version: string;
   compiler: string;
   networking: string;
+}
+
+/**
+ * Structured error payload returned by C++ backend per HttpServer.cpp
+ */
+export interface ApiErrorPayload {
+  error: string;
+  message?: string;
+  path?: string;
+}
+
+/**
+ * Common state lifecycle for asynchronous API requests
+ */
+export type ApiStatus = 'idle' | 'loading' | 'success' | 'empty' | 'error';
+
+export interface ApiState<T> {
+  status: ApiStatus;
+  data: T | null;
+  error: string | null;
+  statusCode: number | null;
 }
 
 export interface TreeNodeDto {
