@@ -39,6 +39,9 @@ export interface TreeCanvasProps {
   selectedNodeId?: string | null;
   onSelectNode?: (nodeId: string) => void;
   highlightedNodeIds?: string[];
+  currentTraversalNodeId?: string | null;
+  traversalStepNumber?: number | null;
+  visitedNodeIds?: string[];
 }
 
 // Layout Configuration Constants
@@ -305,6 +308,9 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
   selectedNodeId,
   onSelectNode,
   highlightedNodeIds = [],
+  currentTraversalNodeId = null,
+  traversalStepNumber = null,
+  visitedNodeIds = [],
 }) => {
   const layout = useMemo(() => computeLcrsLayout(data), [data]);
 
@@ -375,6 +381,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
           <span className="info-title">Interactive SVG Canvas</span>
           <span className="info-subtitle">
             Left-Child Right-Sibling Binary Model ({layout.nodes.length} nodes)
+            {activeTraversal && ` — ${activeTraversal.toUpperCase()} ACTIVE`}
           </span>
         </div>
         <div className="legend-pills">
@@ -439,15 +446,24 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
           {layout.edges.map(edge => {
             const isChild = edge.type === 'child';
             const isOriginatingFromSelected = selectedNodeId === edge.sourceId;
-            const strokeColor = isChild ? '#C0E6FD' : '#80AAD3';
-            const markerId = isChild ? 'url(#arrow-child)' : 'url(#arrow-sibling)';
+            const isOriginatingFromTraversal = currentTraversalNodeId === edge.sourceId;
 
-            const strokeWidth = isOriginatingFromSelected ? '2.8' : '2.0';
+            let strokeColor = isChild ? '#C0E6FD' : '#80AAD3';
+            let strokeWidth = '2.0';
+
+            if (isOriginatingFromTraversal) {
+              strokeWidth = '2.8';
+              strokeColor = '#C0E6FD';
+            } else if (isOriginatingFromSelected) {
+              strokeWidth = '2.5';
+            }
+
+            const markerId = isChild ? 'url(#arrow-child)' : 'url(#arrow-sibling)';
 
             return (
               <g
                 key={edge.id}
-                className={`connector-group ${isOriginatingFromSelected ? 'selected-edge' : ''}`}
+                className={`connector-group ${isOriginatingFromTraversal ? 'traversal-active-edge' : ''}`}
               >
                 <path
                   d={edge.path}
@@ -475,6 +491,8 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
           {/* Nodes Layer */}
           {layout.nodes.map(pos => {
             const isSelected = selectedNodeId === pos.node.id;
+            const isCurrentTraversal = currentTraversalNodeId === pos.node.id;
+            const isVisited = visitedNodeIds.includes(pos.node.id);
             const isHighlighted = highlightedNodeIds.includes(pos.node.id);
 
             let strokeColor = '#3F6593';
@@ -485,6 +503,13 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
               strokeColor = '#C0E6FD';
               strokeWidth = '2.5';
               fillColor = '#213d61'; // Elevated dark navy surface tint
+            } else if (isCurrentTraversal) {
+              strokeColor = '#C0E6FD';
+              strokeWidth = '2.5';
+              fillColor = '#1f3c60';
+            } else if (isVisited) {
+              strokeColor = '#5B86B6';
+              strokeWidth = '1.8';
             } else if (isHighlighted) {
               strokeColor = '#5B86B6';
               strokeWidth = '2';
@@ -499,7 +524,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
               <g
                 key={pos.node.id}
                 transform={`translate(${pos.x}, ${pos.y})`}
-                className={`tree-node-group ${isSelected ? 'selected' : ''}`}
+                className={`tree-node-group ${isSelected ? 'selected' : ''} ${isCurrentTraversal ? 'traversal-current' : ''}`}
                 onClick={() => onSelectNode?.(pos.node.id)}
                 onKeyDown={e => {
                   if (e.key === 'Enter' || e.key === ' ') {
@@ -510,10 +535,10 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
                 tabIndex={0}
                 role="button"
                 aria-pressed={isSelected}
-                aria-label={`${pos.node.name}, ${pos.node.role}${pos.node.department ? ` (${pos.node.department})` : ''}. ${isSelected ? 'Currently selected. Press Enter or Space to deselect.' : 'Press Enter or Space to select.'}`}
+                aria-label={`${pos.node.name}, ${pos.node.role}${pos.node.department ? ` (${pos.node.department})` : ''}. ${isCurrentTraversal ? `Current traversal step ${traversalStepNumber}. ` : ''}${isSelected ? 'Currently selected. Press Enter to deselect.' : 'Press Enter to select.'}`}
               >
                 <title>
-                  {`${pos.node.name} — ${pos.node.role}${pos.node.department ? ` (${pos.node.department})` : ''}\nID: ${pos.node.id}\nClick or press Enter to ${isSelected ? 'deselect' : 'select'}`}
+                  {`${pos.node.name} — ${pos.node.role}${pos.node.department ? ` (${pos.node.department})` : ''}\nID: ${pos.node.id}${isCurrentTraversal ? `\nTraversal Step #${traversalStepNumber}` : ''}\nClick or press Enter to ${isSelected ? 'deselect' : 'select'}`}
                 </title>
 
                 {/* Node Box */}
@@ -524,10 +549,10 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
                   fill={fillColor}
                   stroke={strokeColor}
                   strokeWidth={strokeWidth}
-                  filter={isSelected ? 'drop-shadow(0 0 10px rgba(192, 230, 253, 0.4))' : 'drop-shadow(0 4px 10px rgba(0, 7, 18, 0.45))'}
+                  filter={isSelected || isCurrentTraversal ? 'drop-shadow(0 0 10px rgba(192, 230, 253, 0.4))' : 'drop-shadow(0 4px 10px rgba(0, 7, 18, 0.45))'}
                 />
 
-                {/* Selected Accent Indicator Bar */}
+                {/* Selected Accent Indicator Bar on Left */}
                 {isSelected && (
                   <rect
                     x="0"
@@ -539,11 +564,49 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
                   />
                 )}
 
+                {/* Current Traversal Step Badge on Top-Right */}
+                {isCurrentTraversal && traversalStepNumber !== null && (
+                  <g className="node-traversal-badge">
+                    <rect
+                      x={pos.width - 34}
+                      y="6"
+                      width="28"
+                      height="18"
+                      rx="4"
+                      fill="#000F22"
+                      stroke="#C0E6FD"
+                      strokeWidth="1.2"
+                    />
+                    <text
+                      x={pos.width - 20}
+                      y="19"
+                      fill="#C0E6FD"
+                      fontSize="10"
+                      fontWeight="700"
+                      textAnchor="middle"
+                      style={{ userSelect: 'none' }}
+                    >
+                      #{traversalStepNumber}
+                    </text>
+                  </g>
+                )}
+
+                {/* Visited Indicator Dot for Traversal Progress */}
+                {isVisited && !isCurrentTraversal && (
+                  <circle
+                    cx={pos.width - 12}
+                    cy="14"
+                    r="3.5"
+                    fill="#5B86B6"
+                    opacity="0.8"
+                  />
+                )}
+
                 {/* Node Name */}
                 <text
                   x={pos.width / 2}
                   y={nameY}
-                  fill={isSelected ? '#C0E6FD' : '#F0F7FF'}
+                  fill={isSelected || isCurrentTraversal ? '#C0E6FD' : '#F0F7FF'}
                   fontSize="13"
                   fontWeight="600"
                   textAnchor="middle"

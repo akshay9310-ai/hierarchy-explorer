@@ -326,6 +326,234 @@
   border-radius: var(--radius-sm);
 }
 
+/* ==========================================================================
+   Traversal Stepper & Results Presentation Styles
+   ========================================================================== */
+.traversal-stepper-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  margin-top: 1rem;
+  padding: 1rem;
+  background-color: var(--bg-surface-sunken);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+}
+
+.stepper-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.stepper-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.stepper-title {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.stepper-counter-badge {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-strong);
+  color: var(--brand-icy);
+  padding: 0.15rem 0.5rem;
+  border-radius: var(--radius-sm);
+}
+
+.traversal-source-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+}
+
+.source-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.source-dot.backend {
+  background-color: var(--status-online);
+}
+
+.source-dot.client {
+  background-color: var(--brand-muted);
+}
+
+.stepper-controls-bar {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr 1.2fr;
+  gap: 0.5rem;
+}
+
+.stepper-nav-btn {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  font-weight: 500;
+  padding: 0.45rem 0.6rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+}
+
+.stepper-nav-btn:hover:not(:disabled) {
+  background-color: var(--interactive-hover);
+  border-color: var(--border-active);
+  color: var(--brand-icy);
+}
+
+.stepper-nav-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  border-color: var(--border-subtle);
+}
+
+.stepper-nav-btn.next-btn:not(:disabled) {
+  background-color: rgba(91, 134, 182, 0.2);
+  border-color: var(--border-active);
+}
+
+.stepper-nav-btn.next-btn:hover:not(:disabled) {
+  background-color: rgba(91, 134, 182, 0.35);
+  border-color: var(--brand-icy);
+}
+
+.current-step-callout {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-active);
+  border-left: 3px solid var(--brand-icy);
+  border-radius: var(--radius-sm);
+}
+
+.current-step-badge {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 700;
+  background-color: var(--bg-surface-sunken);
+  color: var(--brand-icy);
+  padding: 0.2rem 0.45rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(192, 230, 253, 0.25);
+}
+
+.current-step-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.current-step-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.current-step-role {
+  font-size: 0.74rem;
+  color: var(--brand-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.traversal-sequence-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.sequence-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--brand-muted);
+}
+
+.sequence-steps-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.sequence-step-btn {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  padding: 0.3rem 0.55rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.sequence-step-btn .step-num {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--brand-muted);
+  font-size: 0.7rem;
+}
+
+.sequence-step-btn:hover {
+  background-color: var(--interactive-hover);
+  border-color: var(--border-active);
+  color: var(--text-primary);
+}
+
+.sequence-step-btn.current {
+  background-color: rgba(192, 230, 253, 0.15);
+  border-color: var(--brand-icy);
+  color: var(--text-primary);
+  font-weight: 600;
+  box-shadow: 0 0 8px rgba(192, 230, 253, 0.25);
+}
+
+.sequence-step-btn.current .step-num {
+  color: var(--brand-icy);
+}
+
+.sequence-step-btn.visited {
+  opacity: 0.75;
+  border-color: var(--border-default);
+}
+
+.sequence-step-btn.visited .step-num {
+  color: var(--brand-medium);
+}
+
+.empty-sequence-text {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
 /* Footer Alignment */
 .app-footer {
   text-align: center;

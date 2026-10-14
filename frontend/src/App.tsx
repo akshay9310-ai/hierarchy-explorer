@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
-import type { HierarchyData, HierarchyMode, TraversalType, BackendStatus } from './api/types';
-import { checkBackendStatus } from './api/client';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import type { HierarchyData, HierarchyMode, TraversalResult, TraversalType, BackendStatus } from './api/types';
+import { checkBackendStatus, fetchBackendTraversal } from './api/client';
+import { computeBinaryTraversal } from './utils/binaryTraversal';
 import { Navbar } from './components/layout/Navbar';
 import { QuickInfoBar } from './components/editor/QuickInfoBar';
 import { NodeInspector } from './components/editor/NodeInspector';
@@ -107,6 +108,11 @@ export function App() {
   const [backendStatus, setBackendStatus] = useState<BackendStatus | null>(null);
   const [isChecking, setIsChecking] = useState<boolean>(true);
 
+  // Traversal sequence & stepper state
+  const [traversalResult, setTraversalResult] = useState<TraversalResult | null>(null);
+  const [traversalSource, setTraversalSource] = useState<'backend' | 'client' | null>(null);
+  const [currentStepIndex, setCurrentStepIndex] = useState<number>(-1);
+
   const fetchStatus = useCallback(async () => {
     setIsChecking(true);
     const result = await checkBackendStatus();
@@ -126,6 +132,8 @@ export function App() {
     setMode(newMode);
     setActiveTraversal(null);
     setSelectedNodeId(null);
+    setTraversalResult(null);
+    setCurrentStepIndex(-1);
   };
 
   const handleSelectTraversal = (type: TraversalType) => {
@@ -166,6 +174,80 @@ export function App() {
       setSelectedNodeId(null);
     }
   }, [selectedNodeId, activeHierarchy]);
+
+  // Execute traversal whenever activeTraversal, mode, or activeHierarchy changes
+  useEffect(() => {
+    let isCancelled = false;
+
+    if (!activeTraversal) {
+      setTraversalResult(null);
+      setTraversalSource(null);
+      setCurrentStepIndex(-1);
+      return;
+    }
+
+    const loadTraversal = async () => {
+      // 1. Prefer calling backend traversal API if active (Requirement 3)
+      const backendResult = await fetchBackendTraversal(mode, activeTraversal);
+      if (isCancelled) return;
+
+      if (backendResult && backendResult.order && backendResult.order.length > 0) {
+        setTraversalResult(backendResult);
+        setTraversalSource('backend');
+        setCurrentStepIndex(0);
+      } else {
+        // 2. Fall back to isolated client-side traversal utility (Requirement 4)
+        const clientResult = computeBinaryTraversal(activeHierarchy, activeTraversal);
+        if (isCancelled) return;
+        setTraversalResult(clientResult);
+        setTraversalSource('client');
+        setCurrentStepIndex(clientResult.order.length > 0 ? 0 : -1);
+      }
+    };
+
+    loadTraversal();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [activeTraversal, mode, activeHierarchy]);
+
+  // Stepper Controls Handlers
+  const handleNextStep = () => {
+    if (!traversalResult || traversalResult.order.length === 0) return;
+    setCurrentStepIndex(prev => {
+      if (prev < 0) return 0;
+      return Math.min(prev + 1, traversalResult.order.length - 1);
+    });
+  };
+
+  const handlePrevStep = () => {
+    if (!traversalResult || traversalResult.order.length === 0) return;
+    setCurrentStepIndex(prev => Math.max(prev - 1, 0));
+  };
+
+  const handleResetSteps = () => {
+    setCurrentStepIndex(-1);
+  };
+
+  const handleStepSelect = (index: number) => {
+    if (!traversalResult || index < 0 || index >= traversalResult.order.length) return;
+    setCurrentStepIndex(index);
+  };
+
+  // Derive current traversal node ID and visited node IDs
+  const currentTraversalStep = (traversalResult && currentStepIndex >= 0 && currentStepIndex < traversalResult.order.length)
+    ? traversalResult.order[currentStepIndex]
+    : null;
+  const currentTraversalNodeId = currentTraversalStep?.id ?? null;
+  const currentTraversalStepNum = currentTraversalStep?.step ?? null;
+
+  const visitedNodeIds = useMemo(() => {
+    if (!traversalResult || currentStepIndex < 0) return [];
+    return traversalResult.order.slice(0, currentStepIndex).map(s => s.id);
+  }, [traversalResult, currentStepIndex]);
+
+  const isEmptyTree = activeHierarchy.nodes.length === 0 || !activeHierarchy.rootId;
 
   return (
     <div className="app-container">
@@ -209,6 +291,9 @@ export function App() {
               activeTraversal={activeTraversal}
               selectedNodeId={selectedNodeId}
               onSelectNode={handleSelectNode}
+              currentTraversalNodeId={currentTraversalNodeId}
+              traversalStepNumber={currentTraversalStepNum}
+              visitedNodeIds={visitedNodeIds}
             />
           </section>
 
@@ -223,6 +308,14 @@ export function App() {
             <TraversalControls
               activeTraversal={activeTraversal}
               onSelectTraversal={handleSelectTraversal}
+              traversalResult={traversalResult}
+              traversalSource={traversalSource}
+              currentStepIndex={currentStepIndex}
+              onNextStep={handleNextStep}
+              onPrevStep={handlePrevStep}
+              onResetSteps={handleResetSteps}
+              onStepSelect={handleStepSelect}
+              isEmptyTree={isEmptyTree}
             />
 
             <div className="system-notes-card">
