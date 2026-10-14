@@ -63,3 +63,36 @@ export interface TraversalResult {
   order: TraversalStep[];
   totalNodes: number;
 }
+
+/**
+ * Member insertion payload per docs/api-contract.md (POST /api/hierarchy/member)
+ */
+export interface InsertMemberRequest {
+  mode: HierarchyMode;
+  id: string;
+  name: string;
+  role: string;
+  department?: string;
+  parentId: string | null;
+  relation: 'child' | 'sibling';
+}
+
+/**
+ * Member update payload for node editing
+ */
+export interface UpdateMemberRequest {
+  id: string;
+  name: string;
+  role: string;
+  department?: string;
+}
+
+/**
+ * Impact summary for node deletion confirmation
+ */
+export interface DescendantImpact {
+  targetNode: TreeNodeDto;
+  descendantCount: number;
+  descendants: TreeNodeDto[];
+  isRoot: boolean;
+}

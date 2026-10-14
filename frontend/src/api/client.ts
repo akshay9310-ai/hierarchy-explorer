@@ -1,4 +1,4 @@
-import type { ApiErrorPayload, ApiState, BackendStatus } from './types';
+import type { ApiErrorPayload, ApiState, BackendStatus, InsertMemberRequest, TreeNodeDto } from './types';
 
 // Centralized relative base path per Vite proxy configuration
 const API_BASE = '/api';
@@ -157,4 +157,40 @@ export async function getBackendStatus(): Promise<ApiState<BackendStatus>> {
 export async function checkBackendStatus(): Promise<BackendStatus | null> {
   const result = await getBackendStatus();
   return result.data;
+}
+
+/**
+ * Attempts to submit member creation to the backend per docs/api-contract.md (POST /api/hierarchy/member).
+ * Note: Per docs/api-contract.md and HttpServer.cpp, this route is planned for Milestone 2.
+ * When called in Milestone 1, the backend returns HTTP 404 ("Endpoint not yet implemented in Milestone 1").
+ */
+export async function createBackendMember(
+  request: InsertMemberRequest
+): Promise<ApiState<TreeNodeDto>> {
+  try {
+    const data = await requestJson<TreeNodeDto>('/hierarchy/member', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request),
+    });
+
+    return {
+      status: 'success',
+      data,
+      error: null,
+      statusCode: 201,
+    };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to create member';
+    const statusCode = err instanceof ApiError ? err.statusCode : null;
+
+    return {
+      status: 'error',
+      data: null,
+      error: message,
+      statusCode,
+    };
+  }
 }

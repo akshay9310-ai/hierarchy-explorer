@@ -6,12 +6,22 @@ import type {
   TraversalType,
   BackendStatus,
   ApiState,
+  InsertMemberRequest,
+  UpdateMemberRequest,
 } from './api/types';
 import { getBackendStatus } from './api/client';
 import { computeBinaryTraversal } from './utils/binaryTraversal';
+import {
+  insertMemberIntoHierarchy,
+  updateMemberInHierarchy,
+  deleteMemberFromHierarchy,
+} from './utils/treeMutation';
 import { Navbar } from './components/layout/Navbar';
 import { QuickInfoBar } from './components/editor/QuickInfoBar';
 import { NodeInspector } from './components/editor/NodeInspector';
+import { NodeCreateModal } from './components/editor/NodeCreateModal';
+import { NodeEditModal } from './components/editor/NodeEditModal';
+import { DeleteConfirmModal } from './components/editor/DeleteConfirmModal';
 import { TreeCanvas } from './components/tree/TreeCanvas';
 import { TraversalControls } from './components/traversal/TraversalControls';
 import './App.css';
@@ -110,8 +120,16 @@ const FRONTEND_DEMO_FAMILY_HIERARCHY: HierarchyData = {
 
 export function App() {
   const [mode, setMode] = useState<HierarchyMode>('org');
+  const [orgHierarchy, setOrgHierarchy] = useState<HierarchyData>(FRONTEND_DEMO_ORG_HIERARCHY);
+  const [familyHierarchy, setFamilyHierarchy] = useState<HierarchyData>(FRONTEND_DEMO_FAMILY_HIERARCHY);
+
   const [activeTraversal, setActiveTraversal] = useState<TraversalType | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+
+  // Modal Dialog Visibility States
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 
   // Centralized backend connection lifecycle
   const [backendState, setBackendState] = useState<ApiState<BackendStatus>>({
@@ -139,13 +157,16 @@ export function App() {
     return () => clearInterval(interval);
   }, [fetchStatus]);
 
-  // Mode switching resets traversal and clears active selection
+  // Mode switching resets traversal, modals, and clears active selection
   const handleModeChange = (newMode: HierarchyMode) => {
     setMode(newMode);
     setActiveTraversal(null);
     setSelectedNodeId(null);
     setTraversalResult(null);
     setCurrentStepIndex(-1);
+    setIsCreateModalOpen(false);
+    setIsEditModalOpen(false);
+    setIsDeleteModalOpen(false);
   };
 
   const handleSelectTraversal = (type: TraversalType) => {
@@ -161,7 +182,43 @@ export function App() {
     setSelectedNodeId(null);
   };
 
-  // Keyboard shortcut: Escape clears selection
+  // Mutation Handlers: update state, canvas, selection, and traversal results
+  const handleNodeCreated = (request: InsertMemberRequest) => {
+    if (mode === 'org') {
+      setOrgHierarchy(prev => insertMemberIntoHierarchy(prev, request));
+    } else {
+      setFamilyHierarchy(prev => insertMemberIntoHierarchy(prev, request));
+    }
+  };
+
+  const handleNodeUpdated = (updates: UpdateMemberRequest) => {
+    if (mode === 'org') {
+      setOrgHierarchy(prev => updateMemberInHierarchy(prev, updates));
+    } else {
+      setFamilyHierarchy(prev => updateMemberInHierarchy(prev, updates));
+    }
+  };
+
+  const handleNodeDeleted = (deletedId: string) => {
+    const currentHierarchy = mode === 'org' ? orgHierarchy : familyHierarchy;
+    const { updatedHierarchy, deletedNodeIds } = deleteMemberFromHierarchy(
+      currentHierarchy,
+      deletedId
+    );
+
+    if (mode === 'org') {
+      setOrgHierarchy(updatedHierarchy);
+    } else {
+      setFamilyHierarchy(updatedHierarchy);
+    }
+
+    // Clean up selection if the deleted node or any of its descendants was selected
+    if (selectedNodeId && deletedNodeIds.includes(selectedNodeId)) {
+      setSelectedNodeId(null);
+    }
+  };
+
+  // Keyboard shortcut: Escape clears selection or closes modals
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -172,10 +229,8 @@ export function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Select active client demo data for the current mode
-  const activeHierarchy = mode === 'org'
-    ? FRONTEND_DEMO_ORG_HIERARCHY
-    : FRONTEND_DEMO_FAMILY_HIERARCHY;
+  // Select active hierarchy data for the current mode
+  const activeHierarchy = mode === 'org' ? orgHierarchy : familyHierarchy;
 
   // Resolve selected node object from active data
   const selectedNode = activeHierarchy.nodes.find(n => n.id === selectedNodeId) ?? null;
@@ -297,6 +352,9 @@ export function App() {
               allNodes={activeHierarchy.nodes}
               onSelectNode={handleSelectNode}
               onClearSelection={handleClearSelection}
+              onOpenCreateModal={() => setIsCreateModalOpen(true)}
+              onOpenEditModal={() => setIsEditModalOpen(true)}
+              onOpenDeleteModal={() => setIsDeleteModalOpen(true)}
             />
 
             <TraversalControls
@@ -331,6 +389,34 @@ export function App() {
             </div>
           </aside>
         </div>
+
+        {/* Hierarchy Mutation Modals */}
+        <NodeCreateModal
+          isOpen={isCreateModalOpen}
+          mode={mode}
+          existingNodes={activeHierarchy.nodes}
+          defaultParentId={selectedNodeId}
+          onClose={() => setIsCreateModalOpen(false)}
+          onNodeCreated={handleNodeCreated}
+        />
+
+        <NodeEditModal
+          isOpen={isEditModalOpen}
+          mode={mode}
+          node={selectedNode}
+          onClose={() => setIsEditModalOpen(false)}
+          onNodeUpdated={handleNodeUpdated}
+        />
+
+        <DeleteConfirmModal
+          isOpen={isDeleteModalOpen}
+          mode={mode}
+          node={selectedNode}
+          allNodes={activeHierarchy.nodes}
+          rootId={activeHierarchy.rootId}
+          onClose={() => setIsDeleteModalOpen(false)}
+          onConfirmDelete={handleNodeDeleted}
+        />
       </main>
 
       <footer className="app-footer">
