@@ -39,21 +39,23 @@ export const Navbar: React.FC<NavbarProps> = ({
       </div>
 
       <div className="navbar-center">
-        <div className="mode-toggle-group">
+        <div className="mode-toggle-group" role="group" aria-label="Hierarchy mode selection">
           <button
             type="button"
             className={`mode-btn ${mode === 'org' ? 'active' : ''}`}
             onClick={() => onModeChange('org')}
+            aria-pressed={mode === 'org'}
           >
-            <span className="mode-icon">🏢</span>
+            <span className="mode-icon" aria-hidden="true">🏢</span>
             Organization Mode
           </button>
           <button
             type="button"
             className={`mode-btn ${mode === 'family' ? 'active' : ''}`}
             onClick={() => onModeChange('family')}
+            aria-pressed={mode === 'family'}
           >
-            <span className="mode-icon">🌳</span>
+            <span className="mode-icon" aria-hidden="true">🌳</span>
             Family Mode
           </button>
         </div>
@@ -62,6 +64,8 @@ export const Navbar: React.FC<NavbarProps> = ({
       <div className="navbar-actions">
         <div
           className="status-badge-container"
+          aria-live="polite"
+          aria-atomic="true"
           title={
             status
               ? `${status.service} (${status.compiler}) — Connected via WinSock2 on port 8080`
@@ -70,7 +74,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               : 'Backend server offline at localhost:8080'
           }
         >
-          <span className={`status-indicator-dot ${isOnline ? 'online' : 'offline'}`} />
+          <span className={`status-indicator-dot ${isOnline ? 'online' : 'offline'}`} aria-hidden="true" />
           <span className="status-text">
             {isChecking ? 'Checking...' : isOnline ? 'Backend Online' : 'Backend Offline'}
           </span>

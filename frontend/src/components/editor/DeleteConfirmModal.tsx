@@ -28,13 +28,6 @@ export const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
     details?: string;
   } | null>(null);
 
-  useEffect(() => {
-    if (isOpen) {
-      setFeedback(null);
-      setIsSubmitting(false);
-    }
-  }, [isOpen]);
-
   // Escape key listener to close modal
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -113,7 +106,7 @@ export const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
         </div>
 
         {feedback && (
-          <div className={`modal-feedback-banner ${feedback.type}`} role="alert">
+          <div className={`modal-feedback-banner ${feedback.type}`} role="alert" aria-live="polite">
             <div className="feedback-header">
               <span className="feedback-icon">
                 {feedback.type === 'success' ? '✓' : feedback.type === 'warning' ? '⚠️' : '✕'}

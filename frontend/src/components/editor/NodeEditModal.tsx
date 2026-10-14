@@ -16,9 +16,9 @@ export const NodeEditModal: React.FC<NodeEditModalProps> = ({
   onClose,
   onNodeUpdated,
 }) => {
-  const [name, setName] = useState('');
-  const [role, setRole] = useState('');
-  const [department, setDepartment] = useState('');
+  const [name, setName] = useState(node?.name ?? '');
+  const [role, setRole] = useState(node?.role ?? '');
+  const [department, setDepartment] = useState(node?.department ?? '');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{
     type: 'error' | 'warning' | 'success';
@@ -34,19 +34,10 @@ export const NodeEditModal: React.FC<NodeEditModalProps> = ({
   const nameInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (isOpen && node) {
-      setName(node.name);
-      setRole(node.role);
-      setDepartment(node.department ?? '');
-      setFeedback(null);
-      setFieldErrors({});
-      setIsSubmitting(false);
-
-      setTimeout(() => {
-        nameInputRef.current?.focus();
-      }, 50);
-    }
-  }, [isOpen, node]);
+    setTimeout(() => {
+      nameInputRef.current?.focus();
+    }, 50);
+  }, []);
 
   // Escape key listener to close modal
   useEffect(() => {
@@ -152,7 +143,7 @@ export const NodeEditModal: React.FC<NodeEditModalProps> = ({
         </div>
 
         {feedback && (
-          <div className={`modal-feedback-banner ${feedback.type}`} role="alert">
+          <div className={`modal-feedback-banner ${feedback.type}`} role="alert" aria-live="polite">
             <div className="feedback-header">
               <span className="feedback-icon">
                 {feedback.type === 'success' ? '✓' : feedback.type === 'warning' ? '⚠️' : '✕'}

@@ -139,9 +139,7 @@ export function App() {
     statusCode: null,
   });
 
-  // Traversal sequence & stepper state
-  const [traversalResult, setTraversalResult] = useState<TraversalResult | null>(null);
-  const [traversalSource, setTraversalSource] = useState<'backend' | 'client' | null>(null);
+  // Traversal stepper step index (-1: unstarted, 0..N-1: active step)
   const [currentStepIndex, setCurrentStepIndex] = useState<number>(-1);
 
   const fetchStatus = useCallback(async () => {
@@ -151,18 +149,28 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    fetchStatus();
+    let isCancelled = false;
+    const poll = async () => {
+      const result = await getBackendStatus();
+      if (!isCancelled) {
+        setBackendState(result);
+      }
+    };
+
+    poll();
     // Poll backend status gently every 10 seconds
-    const interval = setInterval(fetchStatus, 10000);
-    return () => clearInterval(interval);
-  }, [fetchStatus]);
+    const interval = setInterval(poll, 10000);
+    return () => {
+      isCancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
 
   // Mode switching resets traversal, modals, and clears active selection
   const handleModeChange = (newMode: HierarchyMode) => {
     setMode(newMode);
     setActiveTraversal(null);
     setSelectedNodeId(null);
-    setTraversalResult(null);
     setCurrentStepIndex(-1);
     setIsCreateModalOpen(false);
     setIsEditModalOpen(false);
@@ -170,7 +178,11 @@ export function App() {
   };
 
   const handleSelectTraversal = (type: TraversalType) => {
-    setActiveTraversal(prev => (prev === type ? null : type));
+    setActiveTraversal(prev => {
+      const next = prev === type ? null : type;
+      setCurrentStepIndex(next ? 0 : -1);
+      return next;
+    });
   };
 
   // Node selection handlers
@@ -218,47 +230,33 @@ export function App() {
     }
   };
 
-  // Keyboard shortcut: Escape clears selection or closes modals
+  // Keyboard shortcut: Escape clears selection when no modal is open
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        setSelectedNodeId(null);
+        if (!isCreateModalOpen && !isEditModalOpen && !isDeleteModalOpen) {
+          setSelectedNodeId(null);
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [isCreateModalOpen, isEditModalOpen, isDeleteModalOpen]);
 
   // Select active hierarchy data for the current mode
   const activeHierarchy = mode === 'org' ? orgHierarchy : familyHierarchy;
 
   // Resolve selected node object from active data
   const selectedNode = activeHierarchy.nodes.find(n => n.id === selectedNodeId) ?? null;
+  const effectiveSelectedNodeId = selectedNode?.id ?? null;
 
-  // Clear stale selection if selected ID is not present in active hierarchy
-  useEffect(() => {
-    if (selectedNodeId && !activeHierarchy.nodes.some(n => n.id === selectedNodeId)) {
-      setSelectedNodeId(null);
-    }
-  }, [selectedNodeId, activeHierarchy]);
-
-  // Execute traversal whenever activeTraversal or activeHierarchy changes
-  useEffect(() => {
-    if (!activeTraversal) {
-      setTraversalResult(null);
-      setTraversalSource(null);
-      setCurrentStepIndex(-1);
-      return;
-    }
-
-    // Per Milestone 1 architecture, backend implements /api/status.
-    // Traversal is computed via the isolated client-side LCRS binary traversal engine
-    // and explicitly labeled as client-side fallback (Requirement 4 & 8).
-    const clientResult = computeBinaryTraversal(activeHierarchy, activeTraversal);
-    setTraversalResult(clientResult);
-    setTraversalSource('client');
-    setCurrentStepIndex(clientResult.order.length > 0 ? 0 : -1);
+  // Derive traversal result directly without cascading effect
+  const traversalResult = useMemo<TraversalResult | null>(() => {
+    if (!activeTraversal) return null;
+    return computeBinaryTraversal(activeHierarchy, activeTraversal);
   }, [activeTraversal, activeHierarchy]);
+
+  const traversalSource = traversalResult ? ('client' as const) : null;
 
   // Stepper Controls Handlers
   const handleNextStep = () => {
@@ -338,7 +336,7 @@ export function App() {
               data={activeHierarchy}
               mode={mode}
               activeTraversal={activeTraversal}
-              selectedNodeId={selectedNodeId}
+              selectedNodeId={effectiveSelectedNodeId}
               onSelectNode={handleSelectNode}
               currentTraversalNodeId={currentTraversalNodeId}
               traversalStepNumber={currentTraversalStepNum}
@@ -391,32 +389,38 @@ export function App() {
         </div>
 
         {/* Hierarchy Mutation Modals */}
-        <NodeCreateModal
-          isOpen={isCreateModalOpen}
-          mode={mode}
-          existingNodes={activeHierarchy.nodes}
-          defaultParentId={selectedNodeId}
-          onClose={() => setIsCreateModalOpen(false)}
-          onNodeCreated={handleNodeCreated}
-        />
+        {isCreateModalOpen && (
+          <NodeCreateModal
+            isOpen={isCreateModalOpen}
+            mode={mode}
+            existingNodes={activeHierarchy.nodes}
+            defaultParentId={selectedNodeId}
+            onClose={() => setIsCreateModalOpen(false)}
+            onNodeCreated={handleNodeCreated}
+          />
+        )}
 
-        <NodeEditModal
-          isOpen={isEditModalOpen}
-          mode={mode}
-          node={selectedNode}
-          onClose={() => setIsEditModalOpen(false)}
-          onNodeUpdated={handleNodeUpdated}
-        />
+        {isEditModalOpen && selectedNode && (
+          <NodeEditModal
+            isOpen={isEditModalOpen}
+            mode={mode}
+            node={selectedNode}
+            onClose={() => setIsEditModalOpen(false)}
+            onNodeUpdated={handleNodeUpdated}
+          />
+        )}
 
-        <DeleteConfirmModal
-          isOpen={isDeleteModalOpen}
-          mode={mode}
-          node={selectedNode}
-          allNodes={activeHierarchy.nodes}
-          rootId={activeHierarchy.rootId}
-          onClose={() => setIsDeleteModalOpen(false)}
-          onConfirmDelete={handleNodeDeleted}
-        />
+        {isDeleteModalOpen && selectedNode && (
+          <DeleteConfirmModal
+            isOpen={isDeleteModalOpen}
+            mode={mode}
+            node={selectedNode}
+            allNodes={activeHierarchy.nodes}
+            rootId={activeHierarchy.rootId}
+            onClose={() => setIsDeleteModalOpen(false)}
+            onConfirmDelete={handleNodeDeleted}
+          />
+        )}
       </main>
 
       <footer className="app-footer">

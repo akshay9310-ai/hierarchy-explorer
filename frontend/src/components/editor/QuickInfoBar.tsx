@@ -13,7 +13,7 @@ export const QuickInfoBar: React.FC<QuickInfoBarProps> = ({
   status,
 }) => {
   return (
-    <div className="quick-info-bar">
+    <div className="quick-info-bar" role="region" aria-label="Hierarchy summary statistics">
       <div className="info-stat">
         <span className="stat-label">Active Mode</span>
         <span className="stat-value">{mode === 'org' ? '🏢 Organization' : '🌳 Family'}</span>

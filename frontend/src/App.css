@@ -521,6 +521,13 @@
   font-size: 0.7rem;
 }
 
+.sequence-step-btn .step-name {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .sequence-step-btn:hover {
   background-color: var(--interactive-hover);
   border-color: var(--border-active);
@@ -1134,5 +1141,24 @@
 @media (max-width: 600px) {
   .relation-radio-group {
     grid-template-columns: 1fr;
+  }
+
+  .modal-dialog {
+    padding: 1.15rem;
+  }
+
+  .stepper-controls-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .canvas-toolbar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .legend-pills {
+    flex-wrap: wrap;
+    gap: 0.4rem;
   }
 }

@@ -41,10 +41,10 @@ export const NodeCreateModal: React.FC<NodeCreateModalProps> = ({
 
   const nameInputRef = useRef<HTMLInputElement>(null);
 
-  // Auto-generate suggested ID from name
-  useEffect(() => {
-    if (name.trim()) {
-      const slug = name
+  const handleNameChange = (val: string) => {
+    setName(val);
+    if (val.trim()) {
+      const slug = val
         .toLowerCase()
         .replace(/[^a-z0-9]/g, '-')
         .replace(/-+/g, '-')
@@ -54,25 +54,16 @@ export const NodeCreateModal: React.FC<NodeCreateModalProps> = ({
     } else {
       setCustomId('');
     }
-  }, [name, mode]);
+  };
 
-  // Focus input and reset form when modal opens
+  // Focus input when modal opens
   useEffect(() => {
     if (isOpen) {
-      setName('');
-      setRole('');
-      setDepartment('');
-      setParentId(defaultParentId ?? (existingNodes[0]?.id ?? ''));
-      setRelation('child');
-      setFeedback(null);
-      setFieldErrors({});
-      setIsSubmitting(false);
-
       setTimeout(() => {
         nameInputRef.current?.focus();
       }, 50);
     }
-  }, [isOpen, defaultParentId, existingNodes]);
+  }, [isOpen]);
 
   // Escape key listener to close modal
   useEffect(() => {
@@ -211,7 +202,7 @@ export const NodeCreateModal: React.FC<NodeCreateModalProps> = ({
         </div>
 
         {feedback && (
-          <div className={`modal-feedback-banner ${feedback.type}`} role="alert">
+          <div className={`modal-feedback-banner ${feedback.type}`} role="alert" aria-live="polite">
             <div className="feedback-header">
               <span className="feedback-icon">
                 {feedback.type === 'success' ? '✓' : feedback.type === 'warning' ? '⚠️' : '✕'}
@@ -235,7 +226,7 @@ export const NodeCreateModal: React.FC<NodeCreateModalProps> = ({
               className={`form-input ${fieldErrors.name ? 'error' : ''}`}
               placeholder={mode === 'org' ? 'e.g. Alex Mercer' : 'e.g. Arthur Pendragon'}
               value={name}
-              onChange={e => setName(e.target.value)}
+              onChange={e => handleNameChange(e.target.value)}
               disabled={isSubmitting}
               aria-invalid={Boolean(fieldErrors.name)}
               aria-describedby={fieldErrors.name ? 'create-name-error' : undefined}

@@ -31,8 +31,8 @@ export function getDescendantIds(nodes: TreeNodeDto[], targetNodeId: string): st
 
     const currNode = nodeMap.get(currId);
     if (currNode) {
-      if (currNode.leftChildId) queue.push(currNode.leftChildId);
-      if (currNode.rightSiblingId) queue.push(currNode.rightSiblingId);
+      if (currNode.leftChildId && nodeMap.has(currNode.leftChildId)) queue.push(currNode.leftChildId);
+      if (currNode.rightSiblingId && nodeMap.has(currNode.rightSiblingId)) queue.push(currNode.rightSiblingId);
     }
   }
 
