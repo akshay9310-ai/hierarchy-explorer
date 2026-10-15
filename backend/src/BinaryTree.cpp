@@ -41,7 +41,7 @@ TreeNode* BinaryTree::find(const std::string& id) const {
 }
 
 bool BinaryTree::setRoot(const std::string& id, const std::string& name, const std::string& role, const std::string& dept) {
-    if (root != nullptr || nodeRegistry.find(id) != nodeRegistry.end()) {
+    if (id.empty() || name.empty() || root != nullptr || nodeRegistry.find(id) != nodeRegistry.end()) {
         return false;
     }
     root = new TreeNode(id, name, role, dept);
@@ -50,7 +50,7 @@ bool BinaryTree::setRoot(const std::string& id, const std::string& name, const s
 }
 
 bool BinaryTree::addChild(const std::string& parentId, const std::string& id, const std::string& name, const std::string& role, const std::string& dept) {
-    if (nodeRegistry.find(id) != nodeRegistry.end()) {
+    if (parentId.empty() || id.empty() || name.empty() || nodeRegistry.find(id) != nodeRegistry.end()) {
         // Prevent duplicate ID
         return false;
     }

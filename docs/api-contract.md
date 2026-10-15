@@ -6,7 +6,7 @@ Default Base URL: `http://localhost:8080/api`
 
 ---
 
-## Implemented in Milestone 1
+## Implemented in Milestone 2
 
 ### 1. Health & Server Status
 * **Endpoint:** `GET /api/status`
@@ -16,8 +16,8 @@ Default Base URL: `http://localhost:8080/api`
 {
   "status": "ok",
   "service": "Hierarchy Explorer Backend",
-  "version": "1.0.0-m1",
-  "compiler": "GCC 6.3.0 C++14",
+  "version": "2.0.0-m2",
+  "compiler": "C++14",
   "networking": "WinSock2"
 }
 ```
@@ -31,10 +31,6 @@ Default Base URL: `http://localhost:8080/api`
     * `Access-Control-Allow-Headers: Content-Type, Authorization`
 
 ---
-
-## Planned Endpoints (Milestones 2 & Beyond)
-
-*The endpoints below represent the agreed API contract for upcoming milestones. They are not yet active in Milestone 1.*
 
 ### 3. Retrieve Hierarchy
 * **Endpoint:** `GET /api/hierarchy?mode=org|family`
@@ -71,7 +67,24 @@ Default Base URL: `http://localhost:8080/api`
   "relation": "child"
 }
 ```
-* **Response `201 Created` / `400 Bad Request` / `409 Conflict` (cycle or duplicate)**
+* **Response `201 Created`:**
+```json
+{
+  "member": {
+    "id": "node-3",
+    "name": "Alex Mercer",
+    "role": "Lead Architect",
+    "department": "Engineering",
+    "parentId": "node-2",
+    "leftChildId": null,
+    "rightSiblingId": null
+  },
+  "mode": "org",
+  "totalMembers": 3
+}
+```
+
+Only `relation: "child"` is supported. Data is stored in memory and resets when the server restarts.
 
 ### 5. Execute Traversals
 * **Endpoint:** `GET /api/hierarchy/traverse?mode=org&type=preorder|inorder|postorder`
@@ -97,3 +110,24 @@ Default Base URL: `http://localhost:8080/api`
   "rootId": "node-1"
 }
 ```
+
+---
+
+## Validation and Errors
+
+All errors use the same JSON shape:
+```json
+{
+  "error": "Invalid Request",
+  "message": "mode must be org or family",
+  "path": "/api/hierarchy"
+}
+```
+
+* `400 Bad Request`: malformed JSON, missing fields, invalid `mode`, invalid traversal `type`, or unsupported relation.
+* `404 Not Found`: unknown endpoint or insertion parent.
+* `405 Method Not Allowed`: known endpoint called with an unsupported method.
+* `409 Conflict`: duplicate member ID or insertion conflict.
+* `500 Internal Server Error`: unexpected server failure.
+
+`binaryTreeHeight` is the height of the LCRS binary representation, including right-sibling links.

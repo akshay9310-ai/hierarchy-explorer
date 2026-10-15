@@ -5,7 +5,7 @@
 
 The system divides responsibilities between:
 1. **Frontend (React + TypeScript + Vite):** Interactive visualization, hierarchy mode switching, traversal step-through animations, and user interactions.
-2. **Backend (C++14 Engine + Native WinSock2 HTTP Server):** Core Data Structures algorithms, custom binary tree storage, validation, and JSON-based REST endpoints.
+2. **Backend (C++14 Engine + Native WinSock2 HTTP Server):** Core data-structure algorithms, separate in-memory organization and family stores, validation, and JSON REST endpoints.
 
 ---
 
@@ -77,6 +77,15 @@ Real family genealogies are Directed Acyclic Graphs (DAGs) with multiple parents
 [ BinaryTree Engine ]
    ├── TreeNode (id, name, role, left, right)
    ├── Preorder, Inorder, Postorder Traversals
-   └── Validation (cycle check, duplicate ID)
+   └── Validation (required identity, duplicate ID, known parent)
 ```
 The Binary Tree engine is strictly isolated from the networking layer, allowing it to be compiled, tested, and verified as a standalone C++ library independently of the web server.
+
+## 5. Milestone 2 Data Flow and Lifecycle
+
+1. The HTTP layer parses the request line, query parameters, headers, and optional JSON body.
+2. Routes validate `mode` and select either the organization or family `BinaryTree` instance.
+3. The engine performs insertion, lookup, traversal, or metric calculation without depending on HTTP or JSON.
+4. The HTTP layer serializes engine results into the DTO shapes documented in `api-contract.md`.
+
+Both hierarchies are initialized from deterministic fixtures when the process starts. Insertions are intentionally in memory and are discarded on server restart. Binary tree height measures the actual LCRS topology, including right-sibling links; it is not the conceptual hierarchy depth.
