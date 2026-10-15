@@ -79,11 +79,12 @@ npm run dev
 
 ---
 
-## 5. Current Implementation Limitations (Milestone 1)
+## 5. Current Implementation Limitations (Milestone 2)
 
 * **Toolchain Constraints:** MinGW.org GCC 6.3 uses the `win32` thread model, which does not provide `std::thread`. To ensure 100% build compatibility without altering the host environment, the backend uses a native single-threaded WinSock2 event loop with `select()`.
-* **JSON Serialization:** Milestone 1 implements lightweight, safely escaped JSON responses without pulling in heavy external JSON libraries.
-* **Scope:** Milestone 1 establishes the verified full-stack scaffolding, unit test harness, live health endpoint, and interactive UI canvas. Full CRUD persistence and step-by-step traversal playback will be implemented in subsequent milestones.
+* **JSON Serialization:** Milestone 2 uses lightweight, safely escaped JSON responses without pulling in heavy external JSON libraries.
+* **Persistence:** Organization and family fixtures plus inserted members are held in memory and reset when the backend restarts.
+* **Scope:** Milestone 2 exposes hierarchy retrieval, child insertion, C++ traversal, and statistics APIs. Update/delete operations and durable persistence remain future work.
 
 ---
 

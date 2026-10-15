@@ -4,6 +4,7 @@
 #include <string>
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include "BinaryTree.hpp"
 
 /**
  * @brief Minimal, single-threaded HTTP REST Server proof-of-concept
@@ -28,12 +29,28 @@ public:
 
     int getPort() const { return port; }
 
+    // Routes a parsed request and returns a complete HTTP response.
+    // Public to support deterministic API contract tests without opening a socket.
+    std::string routeRequest(const std::string& method, const std::string& target,
+                             const std::string& body = "");
+
 private:
     int port;
     SOCKET listenSocket;
     bool isRunning;
+    BinaryTree orgTree;
+    BinaryTree familyTree;
 
     void handleClient(SOCKET clientSocket);
+    void initializeFixtures();
+    BinaryTree* treeForMode(const std::string& mode);
+    std::string hierarchyJson(const std::string& mode, const BinaryTree& tree) const;
+    std::string traversalJson(const std::string& mode, const std::string& type,
+                              const BinaryTree& tree) const;
+    std::string statsJson(const BinaryTree& tree) const;
+    std::string errorResponse(int statusCode, const std::string& statusText,
+                              const std::string& error, const std::string& message,
+                              const std::string& path);
     std::string buildResponse(int statusCode, const std::string& statusText,
                               const std::string& contentType, const std::string& body,
                               bool isOptions = false);
