@@ -159,6 +159,28 @@ void testDeleteEndpoint() {
     std::cout << "[PASS] DELETE /api/hierarchy/member leaf, branch, root rejection, and query/body handling verified\n";
 }
 
+void testCorsAndCloudHeaders() {
+    HttpServer server(0);
+
+    // 1. Localhost origin reflects
+    const std::string localOpt = server.routeRequest("OPTIONS", "/api/hierarchy", "", "http://localhost:5173");
+    expectContains(localOpt, "HTTP/1.1 204 No Content");
+    expectContains(localOpt, "Access-Control-Allow-Origin: http://localhost:5173");
+    expectContains(localOpt, "Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
+
+    // 2. Vercel deployment origin reflects
+    const std::string vercelOpt = server.routeRequest("OPTIONS", "/api/hierarchy/member", "", "https://hierarchy-explorer.vercel.app");
+    expectContains(vercelOpt, "HTTP/1.1 204 No Content");
+    expectContains(vercelOpt, "Access-Control-Allow-Origin: https://hierarchy-explorer.vercel.app");
+
+    // 3. Status endpoint reflects cloud networking
+    const std::string status = server.routeRequest("GET", "/api/status", "", "http://localhost:5173");
+    expectContains(status, "HTTP/1.1 200 OK");
+    expectContains(status, "\"status\":\"ok\"");
+
+    std::cout << "[PASS] CORS origin resolution and cloud headers verified\n";
+}
+
 } // namespace
 
 int main() {
@@ -168,6 +190,7 @@ int main() {
     testErrors();
     testUpdateEndpoint();
     testDeleteEndpoint();
+    testCorsAndCloudHeaders();
     std::cout << "=== All API Tests Passed Successfully! ===\n";
     return 0;
 }

@@ -236,12 +236,48 @@ npm run dev
 
 ---
 
-## 10. Verification and Testing Commands
+## 10. Cloud Deployment (Render & Vercel)
+
+The application is structured for cloud hosting with the **C++ REST Backend deployed on Render** (via Docker) and the **React + Vite Frontend deployed on Vercel**.
+
+### A. Backend Deployment on Render
+
+The backend includes a cross-platform socket layer that compiles into a lightweight Linux container.
+
+1. **Create Web Service:** In the [Render Dashboard](https://dashboard.render.com/), choose **New +** $\to$ **Web Service** and connect the `hierarchy-explorer` repository.
+2. **Configure Settings:**
+   * **Name:** `hierarchy-explorer-backend`
+   * **Region:** Any (e.g., Oregon or Frankfurt)
+   * **Root Directory:** `backend`
+   * **Environment:** `Docker`
+   * **Dockerfile Path:** `Dockerfile` *(or `./Dockerfile`, relative to `backend` root)*
+3. **Configure Environment Variables:**
+   * `PORT`: `8080` *(Render sets this automatically; the server reads `PORT` from environment)*
+   * `FRONTEND_ORIGIN`: `https://<your-app>.vercel.app` *(Optional: restricts CORS to your Vercel domain; by default `.vercel.app` and localhost origins are permitted)*
+4. **Health Check:** Set Health Check Path to `/api/status` (returns `200 OK` with JSON metadata).
+5. **Deploy:** Render builds `backend/Dockerfile` using GCC 12, runs unit/API tests during build, and starts the container on `0.0.0.0:${PORT}`.
+
+### B. Frontend Deployment on Vercel
+
+1. **Import Project:** In the [Vercel Dashboard](https://vercel.com/), import the repository.
+2. **Configure Build Settings:**
+   * **Framework Preset:** Vite
+   * **Root Directory:** `frontend`
+   * **Build Command:** `npm run build`
+   * **Output Directory:** `dist`
+3. **Configure Environment Variables:**
+   * `VITE_API_BASE_URL`: `https://<your-backend>.onrender.com`
+   *(In local development, leave this unset to automatically route through the local Vite proxy).*
+4. **Deploy:** The frontend builds and connects directly to the cloud C++ backend.
+
+---
+
+## 11. Verification and Testing Commands
 
 All verification commands are tested and verified on Windows PowerShell:
 
 ### 1. C++ Binary Tree Engine & API Contract Tests
-Runs both `test_tree.exe` (data structure unit tests) and `test_api.exe` (HTTP routing, validation, CRUD, and isolation tests):
+Runs both `test_tree.exe` (data structure unit tests) and `test_api.exe` (HTTP routing, CORS, validation, CRUD, and isolation tests):
 ```powershell
 # From repository root:
 mingw32-make test
@@ -277,7 +313,7 @@ npm run build
 
 ---
 
-## 11. Project Directory Structure
+## 12. Project Directory Structure
 
 ```text
 hierarchy-explorer/
@@ -285,15 +321,16 @@ hierarchy-explorer/
 ├── README.md                        # Master project documentation
 ├── package-lock.json                # Root package lock (excluded from commits)
 ├── backend/
-│   ├── Makefile                     # C++ compilation rules for MinGW GCC & WinSock2
+│   ├── Dockerfile                   # Multi-stage Linux Docker build for Render deployment
+│   ├── Makefile                     # Cross-platform Makefile (MinGW Windows & Linux POSIX)
 │   ├── include/
 │   │   ├── BinaryTree.hpp           # BinaryTree ADT class interface & mutation enums
-│   │   ├── HttpServer.hpp           # WinSock2 HTTP server class interface
+│   │   ├── HttpServer.hpp           # Cross-platform HTTP server class interface
 │   │   └── TreeNode.hpp             # LCRS TreeNode structure definition
 │   ├── src/
 │   │   ├── BinaryTree.cpp           # Tree traversals, LCRS wiring, update & cascade delete logic
 │   │   ├── HttpServer.cpp           # Socket event loop, HTTP request routing & JSON serialization
-│   │   └── main.cpp                 # Backend entry point (starts server on port 8080)
+│   │   └── main.cpp                 # Backend entry point (reads PORT env & binds to 0.0.0.0)
 │   └── tests/
 │       ├── test_tree.cpp            # Unit tests for binary tree traversals, height, and mutations
 │       └── test_api.cpp             # Integration tests for REST endpoints, CORS, errors, and CRUD
@@ -313,7 +350,7 @@ hierarchy-explorer/
         ├── index.css                # Base design tokens and typography
         ├── main.tsx                 # React DOM mount point
         ├── api/
-        │   ├── client.ts            # Typed HTTP client with fetch, timeouts, and error handling
+        │   ├── client.ts            # Typed HTTP client supporting VITE_API_BASE_URL & proxy
         │   └── types.ts             # TypeScript interfaces for API schemas and DTOs
         ├── components/
         │   ├── editor/              # Node Inspector, Add/Edit/Delete modals, QuickInfoBar
@@ -328,18 +365,18 @@ hierarchy-explorer/
 
 ---
 
-## 12. Known Limitations
+## 13. Known Limitations
 
 * **In-Memory Backend Storage:** Hierarchy fixtures and runtime modifications (member additions, edits, deletions) are held strictly in server memory. Restarting `hierarchy_server.exe` resets trees to default fixtures. Durable database persistence is not implemented.
 * **Root-Deletion Rejection:** The root node (`org-ceo` in organization mode and `fam-patriarch` in family mode) cannot be deleted. Any delete request targeting the root is rejected with `400 Bad Request` to preserve tree hierarchy integrity.
 * **No Automated Browser Testing:** The repository does not include automated end-to-end browser test suites (e.g., Playwright or Cypress). The frontend UI is verified through interactive manual browser testing, complemented by automated C++ engine unit tests, REST contract tests, Oxlint linting, and TypeScript compilation checks.
-* **Single-Threaded WinSock2 Architecture:** MinGW.org GCC 6.3 operates on the `win32` threading model and does not provide standard `<thread>`. The backend HTTP server is purposefully implemented with a single-threaded, non-blocking `select()` event loop to ensure compilation across all MinGW setups without external runtime dependencies.
+* **Single-Threaded Architecture:** On Windows, MinGW.org GCC 6.3 operates on the `win32` threading model and does not provide standard `<thread>`. The backend HTTP server is purposefully implemented with a portable single-threaded, non-blocking `select()` event loop to ensure clean, identical execution across both local MinGW Windows environments and Render Linux container environments without external runtime dependencies.
 * **LCRS Child Insertion:** Member creation adds nodes exclusively as direct subordinate children (`relation: "child"`). Sibling relationships are maintained and linked internally by the LCRS data structure.
 * **Binary Tree Height:** The metric `binaryTreeHeight` reported by the `/api/hierarchy/stats` endpoint measures the height of the binary tree representation (including right-sibling links), which is distinct from the conceptual tier depth of the $N$-ary hierarchy.
 
 ---
 
-## 13. Troubleshooting & FAQ
+## 14. Troubleshooting & FAQ
 
 ### 1. Vite Proxy Error (`502 Bad Gateway` / `ECONNREFUSED`)
 * **Symptom:** Terminal displays `[vite] http proxy error: /api/status -> ECONNREFUSED`, or the frontend displays the yellow `🟡 Local Demo (Offline)` indicator.
