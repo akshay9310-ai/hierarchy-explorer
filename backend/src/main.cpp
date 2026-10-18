@@ -17,7 +17,7 @@ int main(int argc, char* argv[]) {
 
     std::cout << "=================================================\n";
     std::cout << "   Hierarchy Explorer — C++ Backend Service      \n";
-    std::cout << "   Academic Data Structures Project (Milestone 1)\n";
+    std::cout << "   Academic Data Structures Project (Milestone 2)\n";
     std::cout << "=================================================\n";
 
     HttpServer server(port);

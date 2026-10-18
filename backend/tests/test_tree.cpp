@@ -23,6 +23,10 @@ void testRootAndChildInsertion() {
     assert(tree.getNodeCount() == 1);
     assert(tree.getHeight() == 1);
 
+    assert(!tree.addChild("ceo", "", "Missing ID", "Tester"));
+    assert(!tree.addChild("ceo", "missing-name", "", "Tester"));
+    assert(!tree.addChild("", "missing-parent", "Person", "Tester"));
+
     // Cannot insert duplicate root ID
     bool duplicateRoot = tree.setRoot("ceo", "Another Sarah", "CEO");
     assert(!duplicateRoot);
@@ -62,6 +66,23 @@ void testRootAndChildInsertion() {
     assert(tree.getNodeCount() == 4);
 
     std::cout << "[PASS] LCRS structure and integrity constraints verified\n";
+}
+
+void testValidationAndClear() {
+    BinaryTree tree;
+    assert(!tree.setRoot("", "Root", "CEO"));
+    assert(!tree.setRoot("root", "", "CEO"));
+    assert(tree.setRoot("root", "Root", "CEO"));
+    assert(tree.addChild("root", "child-a", "Child A", "Lead"));
+    assert(tree.addChild("root", "child-b", "Child B", "Lead"));
+    assert(tree.getNodeCount() == 3);
+    assert(tree.getHeight() == 3); // root -> first child -> next sibling in LCRS form
+    tree.clear();
+    assert(tree.isEmpty());
+    assert(tree.getNodeCount() == 0);
+    assert(tree.getHeight() == 0);
+    assert(tree.setRoot("new-root", "New Root", "Owner"));
+    std::cout << "[PASS] Input validation, binary height, and clear/reuse verified\n";
 }
 
 void testTraversals() {
@@ -197,6 +218,7 @@ int main() {
     testRootAndChildInsertion();
     testTraversals();
     testParentLinkage();
+    testValidationAndClear();
     std::cout << "=== All Unit Tests Passed Successfully! ===\n";
     return 0;
 }
