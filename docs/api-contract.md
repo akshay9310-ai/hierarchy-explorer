@@ -27,7 +27,7 @@ Default Base URL: `http://localhost:8080/api`
 * **Response `204 No Content`:**
   * Headers:
     * `Access-Control-Allow-Origin: *`
-    * `Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS`
+    * `Access-Control-Allow-Methods: GET, POST, PATCH, PUT, DELETE, OPTIONS`
     * `Access-Control-Allow-Headers: Content-Type, Authorization`
 
 ---
@@ -84,7 +84,7 @@ Default Base URL: `http://localhost:8080/api`
 }
 ```
 
-Only `relation: "child"` is supported. Data is stored in memory and resets when the server restarts.
+Only `relation: "child"` is supported. In an empty hierarchy, send `parentId: ""` to create its root. Successful writes are persisted before the response is sent.
 
 ### 5. Update Member
 * **Endpoint:** `PUT /api/hierarchy/member`
@@ -114,7 +114,7 @@ Only `relation: "child"` is supported. Data is stored in memory and resets when 
   "totalMembers": 3
 }
 ```
-Preserves structural parent, child, and sibling relationships while updating node attributes.
+Preserves structural parent, child, and sibling relationships while updating node attributes. This compatibility endpoint retains limits of 64 UTF-8 bytes for ID and 100 bytes for name, role, and department. Use PATCH for the newer 200-byte limit. Updates and deletions through these compatibility endpoints are also persisted atomically.
 
 ### 6. Delete Member
 * **Endpoint:** `DELETE /api/hierarchy/member?mode=org|family&id=<memberId>` or `DELETE /api/hierarchy/member` with JSON body `{"mode": "org", "id": "<memberId>"}`
@@ -157,6 +157,43 @@ Preserves structural parent, child, and sibling relationships while updating nod
 
 ---
 
+### 9. Edit Member
+
+`PATCH /api/hierarchy/nodes/:id?mode=org|family`
+
+Send one or more editable fields, for example:
+
+```json
+{ "name": "Alex Mercer", "role": "Director", "department": "Engineering" }
+```
+
+IDs and relationships cannot be changed through this endpoint. Blank names/roles and unknown fields are rejected. An empty department is allowed. Returns the updated full hierarchy with `200 OK`.
+
+### 10. Delete Member and Descendants
+
+`DELETE /api/hierarchy/nodes/:id?mode=org|family`
+
+Removes the member and their conceptual descendants, preserving the member's next siblings. Deleting the root clears that mode only. Returns the updated hierarchy with `200 OK`; unknown IDs return `404`. URL-encode member IDs in paths.
+
+### 11. Search
+
+`GET /api/hierarchy/search?mode=org|family&q=alex`
+
+Returns `{ "ids": ["node-3"] }`. Matches substrings in ID, name, role, and department; ASCII matching is case-insensitive. Empty queries return no results. Results retain binary preorder.
+
+### 12. Import and Export
+
+- `GET /api/hierarchy/export?mode=org|family` returns the same JSON shape as hierarchy retrieval.
+- `POST /api/hierarchy/import?mode=org|family` replaces that mode with a hierarchy JSON body and returns the stored hierarchy.
+
+Import requires `mode`, `rootId`, and `nodes`. Each node requires string `id`, `name`, `role`, and `parentId` (null for the root). `department` is optional. Sibling order follows node array order. Optional `leftChildId` and `rightSiblingId` must agree with the reconstructed tree; exported files round-trip unchanged. Use the exported preorder array when retaining explicit binary pointers.
+
+Files must match the selected mode. Duplicate IDs, missing parents, cycles, disconnected components, malformed JSON, and contradictory pointers are rejected before applying any changes. An empty tree is `{ "mode": "org", "rootId": null, "nodes": [] }`. The UI limits files to 512 KB. The backend permits at most 1000 members, and ID/name/role/department fields are limited to 200 UTF-8 bytes.
+
+### Persistence
+
+The executable loads `data/org.json` and `data/family.json` relative to its working directory, using fixtures only when a save is absent. Set `DATA_DIR` to use another existing parent directory or a cloud persistent-disk mount. Each mutation writes a temporary JSON file and atomically replaces the selected mode's save before updating memory, using Windows file replacement or POSIX rename. A failed disk commit returns `500` and leaves memory unchanged. Invalid existing saves are preserved and disable writes; check the backend console and repair or restore the save file before restarting. Contract tests use isolated in-memory servers or a temporary test directory.
+
 ## Validation and Errors
 
 All errors use the same JSON shape:
@@ -172,6 +209,6 @@ All errors use the same JSON shape:
 * `404 Not Found`: unknown endpoint or insertion parent.
 * `405 Method Not Allowed`: known endpoint called with an unsupported method.
 * `409 Conflict`: duplicate member ID or insertion conflict.
-* `500 Internal Server Error`: unexpected server failure.
+* `500 Internal Server Error`: unexpected server failure or storage commit failure; storage failures use `error: "Storage Error"`.
 
 `binaryTreeHeight` is the height of the LCRS binary representation, including right-sibling links.

@@ -136,9 +136,7 @@ export const NodeCreateModal: React.FC<NodeCreateModalProps> = ({
         if (onNodeCreated) {
           onNodeCreated(payload);
         }
-        setTimeout(() => {
-          onClose();
-        }, 1000);
+        onClose();
       } else {
         setFeedback({
           type: 'error',

@@ -13,6 +13,35 @@
   overflow-x: hidden;
 }
 
+.workspace-toolbar, .management-card, .playback-controls, .search-results {
+  padding: 1.1rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+}
+.workspace-toolbar { display: flex; align-items: end; flex-wrap: wrap; gap: 1rem; }
+.search-field { flex: 1; min-width: 200px; }
+.management-card { display: grid; gap: .9rem; }
+.management-hint, .workspace-metrics { font-size: .8rem; color: var(--text-secondary); line-height: 1.5; }
+.workspace-metrics { margin-left: auto; }
+.workspace-metrics span { margin: 0 .5rem; }
+.management-actions, .playback-controls { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; }
+.member-fields { border: 0; padding: 0; display: grid; gap: .8rem; min-width: 0; }
+.management-card label, .search-field, .playback-controls label { display: grid; gap: .35rem; font-size: .78rem; color: var(--text-secondary); }
+.management-card input, .search-field input, .playback-controls select { width: 100%; padding: .65rem .7rem; border: 1px solid var(--border-strong); border-radius: 5px; background: var(--bg-page); color: var(--text-primary); font: inherit; }
+.management-actions button, .management-card button, .file-button, .workspace-toolbar button, .playback-controls button, .request-error button, .search-results button { padding: .6rem .8rem; border: 1px solid var(--border-strong); background: var(--bg-surface-sunken); color: var(--text-primary); border-radius: 5px; cursor: pointer; font: inherit; font-size: .78rem; }
+.management-actions button[aria-pressed=true], .search-results button[aria-pressed=true] { border-color: var(--brand-icy); background: var(--bg-page); }
+.file-button { position: relative; overflow: hidden; }
+.file-button input { position: absolute; inset: 0; opacity: 0; width: 100%; cursor: pointer; }
+.management-card .danger-button { color: var(--status-offline); border-color: #f8717155; }
+.management-card button:disabled, .workspace-toolbar button:disabled, .file-button.disabled, .playback-controls button:disabled { opacity: .5; cursor: not-allowed; }
+.request-error { padding: .9rem; border: 1px solid #f8717155; border-radius: 5px; color: var(--status-offline); background: #c33c470b; }
+.request-notice { padding: .7rem 1rem; border-left: 3px solid #309575; color: var(--text-primary); font-size: .85rem; }
+.search-results { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; font-size: .8rem; }
+.search-results p { margin-right: .4rem; }
+.playback-controls { justify-content: space-between; }
+button:focus-visible, input:focus-visible, select:focus-visible, .file-button:focus-within { outline: 2px solid var(--brand-icy); outline-offset: 3px; }
+
 /* Primary Content Shell */
 .main-content {
   flex: 1;

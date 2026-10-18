@@ -1,4 +1,8 @@
 #include "HttpServer.hpp"
+#include "Json.hpp"
+#include "FileStorage.hpp"
+#include <fstream>
+#include <set>
 #include <iostream>
 #include <sstream>
 #include <algorithm>
@@ -78,61 +82,14 @@ std::unordered_map<std::string, std::string> parseQuery(const std::string& query
     return result;
 }
 
-void skipWhitespace(const std::string& input, size_t& pos) {
-    while (pos < input.size() && std::isspace(static_cast<unsigned char>(input[pos]))) ++pos;
-}
-
-bool parseJsonString(const std::string& input, size_t& pos, std::string& value) {
-    if (pos >= input.size() || input[pos++] != '"') return false;
-    value.clear();
-    while (pos < input.size()) {
-        const char ch = input[pos++];
-        if (ch == '"') return true;
-        if (ch == '\\') {
-            if (pos >= input.size()) return false;
-            switch (input[pos++]) {
-                case '"': value.push_back('"'); break;
-                case '\\': value.push_back('\\'); break;
-                case '/': value.push_back('/'); break;
-                case 'b': value.push_back('\b'); break;
-                case 'f': value.push_back('\f'); break;
-                case 'n': value.push_back('\n'); break;
-                case 'r': value.push_back('\r'); break;
-                case 't': value.push_back('\t'); break;
-                default: return false;
-            }
-        } else if (static_cast<unsigned char>(ch) < 0x20) return false;
-        else value.push_back(ch);
-    }
-    return false;
-}
-
 bool parseFlatJsonObject(const std::string& input,
                          std::unordered_map<std::string, std::string>& values) {
-    size_t pos = 0;
-    skipWhitespace(input, pos);
-    if (pos >= input.size() || input[pos++] != '{') return false;
-    skipWhitespace(input, pos);
-    if (pos < input.size() && input[pos] == '}') {
-        ++pos; skipWhitespace(input, pos); return pos == input.size();
-    }
-    while (pos < input.size()) {
-        std::string key, value;
-        if (!parseJsonString(input, pos, key)) return false;
-        skipWhitespace(input, pos);
-        if (pos >= input.size() || input[pos++] != ':') return false;
-        skipWhitespace(input, pos);
-        if (!parseJsonString(input, pos, value)) return false;
-        values[key] = value;
-        skipWhitespace(input, pos);
-        if (pos >= input.size()) return false;
-        if (input[pos] == '}') {
-            ++pos; skipWhitespace(input, pos); return pos == input.size();
-        }
-        if (input[pos++] != ',') return false;
-        skipWhitespace(input, pos);
-    }
-    return false;
+    try {
+        const Json parsed = Json::parse(input);
+        if (parsed.kind != Json::Object) return false;
+        for (const auto& entry : parsed.object) values[entry.first] = entry.second.string();
+        return true;
+    } catch (...) { return false; }
 }
 
 std::string valueOf(const std::unordered_map<std::string, std::string>& values,
@@ -151,8 +108,8 @@ std::string getSocketErrorMessage() {
 
 } // namespace
 
-HttpServer::HttpServer(int p)
-    : port(p), listenSocket(INVALID_SOCKET), isRunning(false) {
+HttpServer::HttpServer(int p, const std::string& directory)
+    : port(p), listenSocket(INVALID_SOCKET), isRunning(false), dataDirectory(directory) {
 #ifdef _WIN32
     WSADATA wsaData;
     int result = WSAStartup(MAKEWORD(2, 2), &wsaData);
@@ -168,6 +125,97 @@ HttpServer::HttpServer(int p)
         configuredOrigin = trim(originEnv);
     }
     initializeFixtures();
+    if (!dataDirectory.empty()) {
+        if (!FileStorage::createDirectory(dataDirectory))
+            throw std::runtime_error("Cannot create data directory");
+        for (const std::string mode : {"org", "family"}) {
+            const std::string file = dataDirectory + "/" + mode + ".json";
+            if (!FileStorage::exists(file)) continue;
+            try {
+                std::ifstream input(file, std::ios::binary);
+                if (!input) throw std::runtime_error("Cannot read stored hierarchy");
+                std::ostringstream contents; contents << input.rdbuf();
+                BinaryTree loaded;
+                importTree(contents.str(), mode, loaded);
+                treeForMode(mode)->swap(loaded);
+            } catch (const std::exception& error) {
+                // Never silently overwrite a damaged save with fixture data.
+                readOnlyStorage = true;
+                std::cerr << "[Storage] " << file << ": " << error.what() << "; writes disabled\n";
+            }
+        }
+    }
+}
+
+bool HttpServer::saveTree(const std::string& mode, const BinaryTree& tree) {
+    if (readOnlyStorage) return false;
+    if (dataDirectory.empty()) return true; // Isolated in-memory contract tests.
+    const std::string file = dataDirectory + "/" + mode + ".json";
+    const std::string temporary = file + ".tmp";
+    std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
+    output << hierarchyJson(mode, tree);
+    output.flush();
+    if (!output) return false;
+    output.close();
+    if (!output) return false;
+    return FileStorage::replaceFile(temporary, file);
+}
+
+void HttpServer::importTree(const std::string& body, const std::string& mode, BinaryTree& tree) {
+    const Json document = Json::parse(body);
+    if (document.at("mode").string() != mode) throw std::runtime_error("File mode must match the selected hierarchy");
+    const Json& nodes = document.at("nodes");
+    const Json& root = document.at("rootId");
+    if (nodes.kind != Json::Array || nodes.array.size() > 1000) throw std::runtime_error("nodes must be an array of at most 1000 members");
+    if (nodes.array.empty()) {
+        if (root.kind != Json::Null) throw std::runtime_error("Empty hierarchy must have null rootId");
+        return;
+    }
+    const std::string rootId = root.string();
+    std::set<std::string> ids;
+    std::vector<const Json*> pending;
+    for (const Json& node : nodes.array) {
+        const std::string id = node.at("id").string();
+        const std::string name = node.at("name").string();
+        const std::string role = node.at("role").string();
+        if (trim(id).empty() || trim(name).empty() || trim(role).empty() || id.size() > 200 || name.size() > 200 || role.size() > 200)
+            throw std::runtime_error("Members require nonempty id, name, and role (maximum 200 bytes each)");
+        if (!ids.insert(id).second) throw std::runtime_error("Duplicate member id");
+        const auto dept = node.object.find("department");
+        const std::string department = dept == node.object.end() ? "" : dept->second.string();
+        if (department.size() > 200) throw std::runtime_error("Department exceeds 200 bytes");
+        if (id == rootId) {
+            if (node.at("parentId").kind != Json::Null) throw std::runtime_error("Root cannot have a parent");
+            tree.setRoot(id, name, role, department);
+        } else { node.at("parentId").string(); pending.push_back(&node); }
+    }
+    if (!tree.getRoot()) throw std::runtime_error("rootId does not identify a member");
+    while (!pending.empty()) {
+        bool progressed = false;
+        std::set<std::string> availableParents;
+        for (const TreeNode* member : tree.traversePreorder()) availableParents.insert(member->id);
+        for (auto it = pending.begin(); it != pending.end();) {
+            const Json& node = **it;
+            const std::string parent = node.at("parentId").string();
+            if (availableParents.count(parent)) {
+                const auto dept = node.object.find("department");
+                tree.addChild(parent, node.at("id").string(), node.at("name").string(), node.at("role").string(), dept == node.object.end() ? "" : dept->second.string());
+                it = pending.erase(it); progressed = true;
+            } else ++it;
+        }
+        if (!progressed) throw std::runtime_error("Hierarchy contains a cycle or missing parent");
+    }
+    // Optional binary links must agree with the parent relationships and array order.
+    for (const Json& node : nodes.array) {
+        TreeNode* actual = tree.find(node.at("id").string());
+        for (const std::string key : {"leftChildId", "rightSiblingId"}) {
+            auto it = node.object.find(key);
+            if (it == node.object.end()) continue;
+            TreeNode* linked = key == "leftChildId" ? actual->left : actual->right;
+            if ((it->second.kind == Json::Null && linked) || (it->second.kind != Json::Null && (!linked || it->second.string() != linked->id)))
+                throw std::runtime_error("Binary pointers do not match hierarchy order");
+        }
+    }
 }
 
 HttpServer::~HttpServer() {
@@ -295,7 +343,7 @@ std::string HttpServer::buildResponse(int statusCode, const std::string& statusT
         response << "Access-Control-Allow-Origin: " << allowOrigin << "\r\n";
         response << "Vary: Origin\r\n";
     }
-    response << "Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS\r\n";
+    response << "Access-Control-Allow-Methods: GET, POST, PATCH, PUT, DELETE, OPTIONS\r\n";
     response << "Access-Control-Allow-Headers: Content-Type, Authorization\r\n";
     response << "Connection: close\r\n";
 
@@ -392,11 +440,62 @@ std::string HttpServer::routeRequest(const std::string& method, const std::strin
         return buildResponse(200, "OK", "application/json; charset=utf-8", json, false, origin);
     }
 
+    const std::string nodePrefix = "/api/hierarchy/nodes/";
+    const bool nodePath = path.compare(0, nodePrefix.size(), nodePrefix) == 0;
     const bool knownPath = path == "/api/hierarchy" || path == "/api/hierarchy/member" ||
-        path == "/api/hierarchy/traverse" || path == "/api/hierarchy/stats";
+        path == "/api/hierarchy/traverse" || path == "/api/hierarchy/stats" ||
+        path == "/api/hierarchy/search" || path == "/api/hierarchy/export" || path == "/api/hierarchy/import" || nodePath;
     if (!knownPath) return errorResponse(404, "Not Found", "Not Found", "Endpoint does not exist", path, origin);
 
     const auto modeIt = params.find("mode");
+    if (path == "/api/hierarchy/search" || path == "/api/hierarchy/export" || path == "/api/hierarchy/import" || nodePath) {
+        const std::string mode = modeIt == params.end() ? "" : modeIt->second;
+        BinaryTree* tree = treeForMode(mode);
+        if (!tree) return errorResponse(400, "Bad Request", "Invalid Request", "mode must be org or family", path, origin);
+        if (method == "GET" && path == "/api/hierarchy/export")
+            return buildResponse(200, "OK", "application/json; charset=utf-8", hierarchyJson(mode, *tree), false, origin);
+        if (method == "GET" && path == "/api/hierarchy/search") {
+            const auto queryIt = params.find("q");
+            const std::string term = queryIt == params.end() ? "" : lowerCopy(trim(queryIt->second));
+            std::ostringstream json; json << "{\"ids\":[";
+            bool first = true;
+            if (!term.empty()) for (const TreeNode* node : tree->traversePreorder()) {
+                if (lowerCopy(node->id + " " + node->name + " " + node->role + " " + node->department).find(term) == std::string::npos) continue;
+                if (!first) json << ',';
+                first = false; json << '"' << jsonEscape(node->id) << '"';
+            }
+            json << "]}";
+            return buildResponse(200, "OK", "application/json; charset=utf-8", json.str(), false, origin);
+        }
+        if ((method == "POST" && path == "/api/hierarchy/import") || (nodePath && (method == "PATCH" || method == "DELETE"))) {
+            BinaryTree candidate;
+            try {
+                if (path == "/api/hierarchy/import") importTree(body, mode, candidate);
+                else {
+                    importTree(hierarchyJson(mode, *tree), mode, candidate);
+                    const std::string id = urlDecode(path.substr(nodePrefix.size()));
+                    TreeNode* node = candidate.find(id);
+                    if (!node) return errorResponse(404, "Not Found", "Not Found", "Member does not exist", path, origin);
+                    if (method == "DELETE") candidate.removeMember(id);
+                    else {
+                        std::unordered_map<std::string, std::string> values;
+                        if (!parseFlatJsonObject(body, values) || values.empty()) throw std::runtime_error("Provide name, role, or department as strings");
+                        for (const auto& field : values) {
+                            if (field.first != "name" && field.first != "role" && field.first != "department") throw std::runtime_error("Only name, role, and department can be edited");
+                            if ((field.first != "department" && trim(field.second).empty()) || field.second.size() > 200) throw std::runtime_error("Name and role cannot be blank; fields are limited to 200 bytes");
+                            if (field.first == "name") node->name = trim(field.second);
+                            else if (field.first == "role") node->role = trim(field.second);
+                            else node->department = trim(field.second);
+                        }
+                    }
+                }
+            } catch (const std::exception& error) { return errorResponse(400, "Bad Request", "Invalid Request", error.what(), path, origin); }
+            if (!saveTree(mode, candidate)) return errorResponse(500, "Internal Server Error", "Storage Error", "Could not save hierarchy; no changes were applied", path, origin);
+            tree->swap(candidate);
+            return buildResponse(200, "OK", "application/json; charset=utf-8", hierarchyJson(mode, *tree), false, origin);
+        }
+        return errorResponse(405, "Method Not Allowed", "Method Not Allowed", "Unsupported HTTP method", path, origin);
+    }
     if (method == "GET" && path == "/api/hierarchy") {
         const std::string mode = modeIt == params.end() ? "" : modeIt->second;
         BinaryTree* tree = treeForMode(mode);
@@ -432,24 +531,31 @@ std::string HttpServer::routeRequest(const std::string& method, const std::strin
         const std::string relation = valueOf(values, "relation");
         BinaryTree* tree = treeForMode(mode);
         if (!tree) return errorResponse(400, "Bad Request", "Invalid Request", "mode must be org or family", path, origin);
-        if (id.empty() || name.empty() || role.empty() || parentId.empty() || relation.empty())
-            return errorResponse(400, "Bad Request", "Invalid Request", "id, name, role, parentId, and relation are required", path, origin);
+        if (id.empty() || name.empty() || role.empty() || (!tree->isEmpty() && parentId.empty()) || relation.empty())
+            return errorResponse(400, "Bad Request", "Invalid Request", "id, name, role, and relation are required; parentId is required unless the tree is empty", path, origin);
         if (relation != "child")
             return errorResponse(400, "Bad Request", "Invalid Request", "relation must be child", path, origin);
+        if (id.size() > 200 || name.size() > 200 || role.size() > 200 || department.size() > 200 || tree->getNodeCount() >= 1000)
+            return errorResponse(400, "Bad Request", "Invalid Request", "Fields are limited to 200 bytes and hierarchies to 1000 members", path, origin);
         if (tree->find(id))
             return errorResponse(409, "Conflict", "Conflict", "A member with this id already exists", path, origin);
-        if (!tree->find(parentId))
+        if (!tree->isEmpty() && !tree->find(parentId))
             return errorResponse(404, "Not Found", "Not Found", "Parent member does not exist", path, origin);
-        if (!tree->addChild(parentId, id, name, role, department))
+        BinaryTree candidate;
+        importTree(hierarchyJson(mode, *tree), mode, candidate);
+        const bool inserted = candidate.isEmpty() ? candidate.setRoot(id, name, role, department) : candidate.addChild(parentId, id, name, role, department);
+        if (!inserted)
             return errorResponse(409, "Conflict", "Conflict", "Member could not be inserted", path, origin);
+        if (!saveTree(mode, candidate)) return errorResponse(500, "Internal Server Error", "Storage Error", "Could not save hierarchy; no changes were applied", path, origin);
+        tree->swap(candidate);
         const TreeNode* created = tree->find(id);
         std::ostringstream json;
         json << "{\"member\":{\"id\":\"" << jsonEscape(created->id)
              << "\",\"name\":\"" << jsonEscape(created->name)
              << "\",\"role\":\"" << jsonEscape(created->role)
              << "\",\"department\":\"" << jsonEscape(created->department)
-             << "\",\"parentId\":\"" << jsonEscape(created->parentId)
-             << "\",\"leftChildId\":null,\"rightSiblingId\":null},\"mode\":\""
+             << "\",\"parentId\":" << (created->parentId.empty() ? "null" : "\"" + jsonEscape(created->parentId) + "\"")
+             << ",\"leftChildId\":null,\"rightSiblingId\":null},\"mode\":\""
              << jsonEscape(mode) << "\",\"totalMembers\":" << tree->getNodeCount() << '}';
         return buildResponse(201, "Created", "application/json; charset=utf-8", json.str(), false, origin);
     }
@@ -468,11 +574,16 @@ std::string HttpServer::routeRequest(const std::string& method, const std::strin
             return errorResponse(400, "Bad Request", "Invalid Request", "id, name, and role are required", path, origin);
         if (id.size() > 64 || name.size() > 100 || role.size() > 100 || department.size() > 100)
             return errorResponse(400, "Bad Request", "Invalid Request", "Input length exceeds allowed maximum", path, origin);
-        const auto res = tree->updateMember(id, name, role, department);
+        BinaryTree candidate;
+        importTree(hierarchyJson(mode, *tree), mode, candidate);
+        const auto res = candidate.updateMember(id, name, role, department);
         if (res == BinaryTree::UpdateResult::NOT_FOUND)
             return errorResponse(404, "Not Found", "Not Found", "Member does not exist", path, origin);
         if (res == BinaryTree::UpdateResult::INVALID_INPUT)
             return errorResponse(400, "Bad Request", "Invalid Request", "name and role cannot be empty", path, origin);
+
+        if (!saveTree(mode, candidate)) return errorResponse(500, "Internal Server Error", "Storage Error", "Could not save hierarchy; no changes were applied", path, origin);
+        tree->swap(candidate);
 
         const TreeNode* updated = tree->find(id);
         std::ostringstream json;
@@ -510,13 +621,18 @@ std::string HttpServer::routeRequest(const std::string& method, const std::strin
             return errorResponse(400, "Bad Request", "Invalid Request", "id is required", path, origin);
 
         std::vector<std::string> deletedIds;
-        const auto res = tree->deleteMember(id, deletedIds);
+        BinaryTree candidate;
+        importTree(hierarchyJson(mode, *tree), mode, candidate);
+        const auto res = candidate.deleteMember(id, deletedIds);
         if (res == BinaryTree::DeleteResult::NOT_FOUND)
             return errorResponse(404, "Not Found", "Not Found", "Member does not exist", path, origin);
         if (res == BinaryTree::DeleteResult::ROOT_NODE)
             return errorResponse(400, "Bad Request", "Invalid Request", "Root member cannot be deleted", path, origin);
         if (res == BinaryTree::DeleteResult::FAILED)
             return errorResponse(500, "Internal Server Error", "Internal Server Error", "Failed to delete member", path, origin);
+
+        if (!saveTree(mode, candidate)) return errorResponse(500, "Internal Server Error", "Storage Error", "Could not save hierarchy; no changes were applied", path, origin);
+        tree->swap(candidate);
 
         std::ostringstream json;
         json << "{\"deletedMemberId\":\"" << jsonEscape(id)

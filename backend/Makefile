@@ -40,10 +40,10 @@ $(TEST_DIR)/%.o: $(TEST_DIR)/%.cpp
 
 # Header prerequisites for incremental builds
 $(SRC_DIR)/BinaryTree.o: $(INC_DIR)/BinaryTree.hpp $(INC_DIR)/TreeNode.hpp
-$(SRC_DIR)/HttpServer.o: $(INC_DIR)/HttpServer.hpp $(INC_DIR)/BinaryTree.hpp $(INC_DIR)/TreeNode.hpp
+$(SRC_DIR)/HttpServer.o: $(INC_DIR)/HttpServer.hpp $(INC_DIR)/BinaryTree.hpp $(INC_DIR)/TreeNode.hpp $(INC_DIR)/Json.hpp $(INC_DIR)/FileStorage.hpp
 $(SRC_DIR)/main.o: $(INC_DIR)/HttpServer.hpp $(INC_DIR)/BinaryTree.hpp $(INC_DIR)/TreeNode.hpp
 $(TEST_DIR)/test_tree.o: $(INC_DIR)/BinaryTree.hpp $(INC_DIR)/TreeNode.hpp
-$(TEST_DIR)/test_api.o: $(INC_DIR)/HttpServer.hpp $(INC_DIR)/BinaryTree.hpp $(INC_DIR)/TreeNode.hpp
+$(TEST_DIR)/test_api.o: $(INC_DIR)/HttpServer.hpp $(INC_DIR)/BinaryTree.hpp $(INC_DIR)/TreeNode.hpp $(INC_DIR)/FileStorage.hpp
 
 $(TEST_BIN): $(TEST_OBJS)
 	$(CXX) $(CXXFLAGS) -o $@ $^

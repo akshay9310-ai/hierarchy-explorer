@@ -30,7 +30,8 @@ int main(int argc, char* argv[]) {
     std::cout << "   Academic Data Structures Project (Cloud Ready)\n";
     std::cout << "=================================================\n";
 
-    HttpServer server(port);
+    const char* dataDirectory = std::getenv("DATA_DIR");
+    HttpServer server(port, dataDirectory && *dataDirectory ? dataDirectory : "data");
     if (!server.start()) {
         std::cerr << "[Error] Failed to start HTTP server on port " << port << ".\n";
         return 1;

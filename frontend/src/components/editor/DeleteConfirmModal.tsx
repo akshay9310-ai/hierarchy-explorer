@@ -71,9 +71,7 @@ export const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
         if (onConfirmDelete) {
           onConfirmDelete(node.id);
         }
-        setTimeout(() => {
-          onClose();
-        }, 700);
+        onClose();
       } else {
         setFeedback({
           type: 'error',

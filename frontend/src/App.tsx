@@ -1,30 +1,10 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import type {
-  HierarchyData,
-  HierarchyMode,
-  HierarchyStats,
-  TraversalResult,
-  TraversalType,
-  BackendStatus,
-  ApiState,
-  InsertMemberRequest,
-  UpdateMemberRequest,
-} from './api/types';
-import {
-  getBackendStatus,
-  getHierarchy,
-  getHierarchyTraversal,
-  getHierarchyStats,
-} from './api/client';
-import { computeBinaryTraversal } from './utils/binaryTraversal';
-import {
-  insertMemberIntoHierarchy,
-  updateMemberInHierarchy,
-  deleteMemberFromHierarchy,
-} from './utils/treeMutation';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import type { HierarchyData, HierarchyMode, HierarchyStats, TraversalResult, TraversalType, BackendStatus, ApiState } from './api/types';
+import { getBackendStatus, getHierarchyData as getHierarchy, getStats, getTraversal, searchMembers, addMember, deleteMember, exportHierarchy, importHierarchy } from './api/client';
 import { Navbar } from './components/layout/Navbar';
 import { QuickInfoBar } from './components/editor/QuickInfoBar';
 import { NodeInspector } from './components/editor/NodeInspector';
+import { MemberEditor } from './components/editor/MemberEditor';
 import { NodeCreateModal } from './components/editor/NodeCreateModal';
 import { NodeEditModal } from './components/editor/NodeEditModal';
 import { DeleteConfirmModal } from './components/editor/DeleteConfirmModal';
@@ -32,538 +12,153 @@ import { TreeCanvas } from './components/tree/TreeCanvas';
 import { TraversalControls } from './components/traversal/TraversalControls';
 import './App.css';
 
-// ============================================================================
-// FRONTEND-ONLY DEMO DATA (Milestone 1 Canvas Scaffolding)
-// Note: These mock hierarchies are strictly client-side demo fixtures used to
-// verify the SVG canvas layout engine before backend CRUD endpoints are wired.
-// ============================================================================
-
-const FRONTEND_DEMO_ORG_HIERARCHY: HierarchyData = {
-  mode: 'org',
-  rootId: 'org-ceo',
-  nodes: [
-    {
-      id: 'org-ceo',
-      name: 'Sarah Connor',
-      role: 'Chief Executive Officer',
-      department: 'Executive',
-      parentId: null,
-      leftChildId: 'org-vp-tech',
-      rightSiblingId: null,
-    },
-    {
-      id: 'org-vp-tech',
-      name: 'John Connor',
-      role: 'VP Technology',
-      department: 'Engineering',
-      parentId: 'org-ceo',
-      leftChildId: 'org-lead-arch',
-      rightSiblingId: 'org-vp-ops',
-    },
-    {
-      id: 'org-vp-ops',
-      name: 'Kyle Reese',
-      role: 'VP Operations',
-      department: 'Operations',
-      parentId: 'org-ceo',
-      leftChildId: null,
-      rightSiblingId: null,
-    },
-    {
-      id: 'org-lead-arch',
-      name: 'Miles Dyson',
-      role: 'Lead Architect',
-      department: 'Systems Architecture',
-      parentId: 'org-vp-tech',
-      leftChildId: null,
-      rightSiblingId: null,
-    },
-  ],
-};
-
-const FRONTEND_DEMO_FAMILY_HIERARCHY: HierarchyData = {
-  mode: 'family',
-  rootId: 'fam-patriarch',
-  nodes: [
-    {
-      id: 'fam-patriarch',
-      name: 'Arthur Pendragon',
-      role: 'Family Patriarch',
-      department: 'Royal House',
-      parentId: null,
-      leftChildId: 'fam-first-child',
-      rightSiblingId: null,
-    },
-    {
-      id: 'fam-first-child',
-      name: 'Galahad',
-      role: 'First Child (Eldest)',
-      department: 'Line of Avalon',
-      parentId: 'fam-patriarch',
-      leftChildId: 'fam-grandchild',
-      rightSiblingId: 'fam-sibling',
-    },
-    {
-      id: 'fam-sibling',
-      name: 'Gawain',
-      role: 'Second Child (Sibling)',
-      department: 'Line of Orkney',
-      parentId: 'fam-patriarch',
-      leftChildId: null,
-      rightSiblingId: null,
-    },
-    {
-      id: 'fam-grandchild',
-      name: 'Lancelot',
-      role: 'Grandchild (Branch)',
-      department: 'Champions',
-      parentId: 'fam-first-child',
-      leftChildId: null,
-      rightSiblingId: null,
-    },
-  ],
-};
+const message = (error: unknown) => error instanceof Error ? error.message : 'The request failed. Please retry.';
 
 export function App() {
   const [mode, setMode] = useState<HierarchyMode>('org');
-  const [orgHierarchy, setOrgHierarchy] = useState<HierarchyData>(FRONTEND_DEMO_ORG_HIERARCHY);
-  const [familyHierarchy, setFamilyHierarchy] = useState<HierarchyData>(FRONTEND_DEMO_FAMILY_HIERARCHY);
-
-  // Backend / demo data source tracking and live statistics
-  const [dataSource, setDataSource] = useState<'backend' | 'demo'>('demo');
-  const [hierarchyStats, setHierarchyStats] = useState<HierarchyStats | null>(null);
-  const [isHierarchyLoading, setIsHierarchyLoading] = useState(false);
-  const [hierarchyError, setHierarchyError] = useState<string | null>(null);
-
-  const [activeTraversal, setActiveTraversal] = useState<TraversalType | null>(null);
-  const [backendTraversal, setBackendTraversal] = useState<TraversalResult | null>(null);
+  const [hierarchy, setHierarchy] = useState<HierarchyData | null>(null);
+  const [stats, setStats] = useState<HierarchyStats | null>(null);
+  const [revision, setRevision] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState('');
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [backendState, setBackendState] = useState<ApiState<BackendStatus>>({ status: 'loading', data: null, error: null, statusCode: null });
+  const [activeTraversal, setActiveTraversal] = useState<TraversalType | null>(null);
+  const [traversalResult, setTraversalResult] = useState<TraversalResult | null>(null);
+  const [traversalError, setTraversalError] = useState<string | null>(null);
+  const [currentStepIndex, setCurrentStepIndex] = useState(-1);
+  const [playing, setPlaying] = useState(false);
+  const [speed, setSpeed] = useState(800);
+  const [query, setQuery] = useState('');
+  const [searchIds, setSearchIds] = useState<string[]>([]);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [modal, setModal] = useState<'create' | 'edit' | 'delete' | null>(null);
 
-  // Modal Dialog Visibility States
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const resetTraversal = () => { setTraversalResult(null); setTraversalError(null); setCurrentStepIndex(-1); setPlaying(false); };
+  const reload = () => {
+    setLoading(true); setError(null); setHierarchy(null); setStats(null);
+    resetTraversal(); setSearchIds([]); setSearchError(null); setSearching(Boolean(query.trim()));
+    setRevision(value => value + 1);
+  };
 
-  // Centralized backend connection lifecycle
-  const [backendState, setBackendState] = useState<ApiState<BackendStatus>>({
-    status: 'idle',
-    data: null,
-    error: null,
-    statusCode: null,
-  });
-
-  const backendOnlineRef = useRef(false);
-
-  // Traversal stepper step index (-1: unstarted, 0..N-1: active step)
-  const [currentStepIndex, setCurrentStepIndex] = useState<number>(-1);
-
-  // Load authoritative hierarchy and statistics from backend
-  const loadHierarchy = useCallback(async (targetMode: HierarchyMode) => {
-    setIsHierarchyLoading(true);
-    setHierarchyError(null);
-    try {
-      const [hierRes, statsRes] = await Promise.all([
-        getHierarchy(targetMode),
-        getHierarchyStats(targetMode),
-      ]);
-
-      if (hierRes.status === 'success' && hierRes.data) {
-        if (targetMode === 'org') {
-          setOrgHierarchy(hierRes.data);
-        } else {
-          setFamilyHierarchy(hierRes.data);
-        }
-        setDataSource('backend');
-      } else {
-        setDataSource('demo');
-        if (hierRes.error) {
-          setHierarchyError(hierRes.error);
-        }
-      }
-
-      if (statsRes.status === 'success' && statsRes.data) {
-        setHierarchyStats(statsRes.data);
-      } else {
-        setHierarchyStats(null);
-      }
-    } catch (err) {
-      setDataSource('demo');
-      setHierarchyError(err instanceof Error ? err.message : 'Failed to load hierarchy');
-    } finally {
-      setIsHierarchyLoading(false);
-    }
-  }, []);
-
-  const fetchStatus = useCallback(async () => {
-    setBackendState(prev => ({ ...prev, status: 'loading' }));
-    const result = await getBackendStatus();
-    setBackendState(result);
-    if (result.status === 'success') {
-      backendOnlineRef.current = true;
-      await loadHierarchy(mode);
-    } else {
-      backendOnlineRef.current = false;
-      setDataSource('demo');
-      setHierarchyStats(null);
-    }
-  }, [mode, loadHierarchy]);
-
+  const fetchStatus = useCallback(() => getBackendStatus().then(setBackendState), []);
+  useEffect(() => { void fetchStatus(); const timer = setInterval(fetchStatus, 10000); return () => clearInterval(timer); }, [fetchStatus]);
   useEffect(() => {
-    let isCancelled = false;
-    const poll = async () => {
-      const result = await getBackendStatus();
-      if (!isCancelled) {
-        const wasOffline = !backendOnlineRef.current;
-        const isOnline = result.status === 'success';
-        backendOnlineRef.current = isOnline;
-        setBackendState(result);
-        if (isOnline && wasOffline) {
-          await loadHierarchy(mode);
-        } else if (!isOnline) {
-          setDataSource('demo');
-          setHierarchyStats(null);
-        }
+    let cancelled = false;
+    Promise.all([getHierarchy(mode), getStats(mode)]).then(([data, metrics]) => {
+      if (!cancelled) {
+        setHierarchy(data); setStats(metrics);
+        setSelectedNodeId(id => data.nodes.some(node => node.id === id) ? id : null);
       }
-    };
-
-    poll();
-    // Poll backend status gently every 10 seconds
-    const interval = setInterval(poll, 10000);
-    return () => {
-      isCancelled = true;
-      clearInterval(interval);
-    };
-  }, [mode, loadHierarchy]);
-
-  // Mode switching resets traversal, modals, and clears active selection
-  const handleModeChange = (newMode: HierarchyMode) => {
-    setMode(newMode);
-    setActiveTraversal(null);
-    setBackendTraversal(null);
-    setSelectedNodeId(null);
-    setCurrentStepIndex(-1);
-    setIsCreateModalOpen(false);
-    setIsEditModalOpen(false);
-    setIsDeleteModalOpen(false);
-    if (backendState.status === 'success') {
-      loadHierarchy(newMode);
-    }
-  };
-
-  const handleSelectTraversal = (type: TraversalType) => {
-    setActiveTraversal(prev => {
-      const next = prev === type ? null : type;
-      setCurrentStepIndex(next ? 0 : -1);
-      return next;
-    });
-    setBackendTraversal(null);
-  };
-
-  // Node selection handlers
-  const handleSelectNode = (nodeId: string) => {
-    setSelectedNodeId(prev => (prev === nodeId ? null : nodeId));
-  };
-
-  const handleClearSelection = () => {
-    setSelectedNodeId(null);
-  };
-
-  // Mutation Handlers: update state, canvas, selection, and traversal results
-  const handleNodeCreated = async (request: InsertMemberRequest) => {
-    if (backendState.status === 'success') {
-      // Authoritatively reload the hierarchy and stats from C++ engine
-      await loadHierarchy(mode);
-    } else {
-      if (mode === 'org') {
-        setOrgHierarchy(prev => insertMemberIntoHierarchy(prev, request));
-      } else {
-        setFamilyHierarchy(prev => insertMemberIntoHierarchy(prev, request));
-      }
-    }
-  };
-
-  const handleNodeUpdated = async (updates: UpdateMemberRequest) => {
-    if (backendState.status === 'success') {
-      await loadHierarchy(mode);
-    } else {
-      if (mode === 'org') {
-        setOrgHierarchy(prev => updateMemberInHierarchy(prev, updates));
-      } else {
-        setFamilyHierarchy(prev => updateMemberInHierarchy(prev, updates));
-      }
-    }
-  };
-
-  const handleNodeDeleted = async (deletedId: string) => {
-    if (backendState.status === 'success') {
-      await loadHierarchy(mode);
-    } else {
-      const currentHierarchy = mode === 'org' ? orgHierarchy : familyHierarchy;
-      const { updatedHierarchy, deletedNodeIds } = deleteMemberFromHierarchy(
-        currentHierarchy,
-        deletedId
-      );
-
-      if (mode === 'org') {
-        setOrgHierarchy(updatedHierarchy);
-      } else {
-        setFamilyHierarchy(updatedHierarchy);
-      }
-
-      // Clean up selection if the deleted node or any of its descendants was selected
-      if (selectedNodeId && deletedNodeIds.includes(selectedNodeId)) {
-        setSelectedNodeId(null);
-      }
-    }
-
-    if (selectedNodeId === deletedId) {
-      setSelectedNodeId(null);
-    }
-  };
-
-  // Keyboard shortcut: Escape clears selection when no modal is open
+    }).catch(reason => { if (!cancelled) setError(message(reason)); }).finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [mode, revision]);
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        if (!isCreateModalOpen && !isEditModalOpen && !isDeleteModalOpen) {
-          setSelectedNodeId(null);
-        }
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isCreateModalOpen, isEditModalOpen, isDeleteModalOpen]);
-
-  // Select active hierarchy data for the current mode
-  const activeHierarchy = mode === 'org' ? orgHierarchy : familyHierarchy;
-
-  // Resolve selected node object from active data
-  const selectedNode = activeHierarchy.nodes.find(n => n.id === selectedNodeId) ?? null;
-  const effectiveSelectedNodeId = selectedNode?.id ?? null;
-
-  // Fetch backend traversal when active traversal changes and backend is online
+    let cancelled = false;
+    if (activeTraversal && hierarchy) getTraversal(mode, activeTraversal).then(result => { if (!cancelled) setTraversalResult(result); }).catch(reason => { if (!cancelled) setTraversalError(message(reason)); });
+    return () => { cancelled = true; };
+  }, [mode, activeTraversal, hierarchy]);
   useEffect(() => {
-    if (!activeTraversal || backendState.status !== 'success') {
-      return;
-    }
+    if (!playing || !traversalResult) return;
+    const timer = setTimeout(() => {
+      if (currentStepIndex + 1 >= traversalResult.order.length - 1) setPlaying(false);
+      setCurrentStepIndex(step => Math.min(step + 1, traversalResult.order.length - 1));
+    }, speed);
+    return () => clearTimeout(timer);
+  }, [playing, currentStepIndex, speed, traversalResult]);
+  useEffect(() => {
+    let cancelled = false;
+    if (!query.trim() || !hierarchy) return;
+    const timer = setTimeout(() => {
+      searchMembers(mode, query).then(result => { if (!cancelled) setSearchIds(result.ids); }).catch(reason => { if (!cancelled) setSearchError(message(reason)); }).finally(() => { if (!cancelled) setSearching(false); });
+    }, 300);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [query, mode, hierarchy]);
+  useEffect(() => {
+    const keyDown = (event: KeyboardEvent) => { if (event.key === 'Escape' && !modal) setSelectedNodeId(null); };
+    window.addEventListener('keydown', keyDown); return () => window.removeEventListener('keydown', keyDown);
+  }, [modal]);
 
-    let isCancelled = false;
-    getHierarchyTraversal(mode, activeTraversal).then(res => {
-      if (!isCancelled && res.status === 'success' && res.data) {
-        setBackendTraversal(res.data);
-      }
-    });
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [mode, activeTraversal, backendState.status, activeHierarchy]);
-
-  // Derive traversal result: backend response prioritized when online, client fallback otherwise
-  const clientTraversal = useMemo<TraversalResult | null>(() => {
-    if (!activeTraversal) return null;
-    return computeBinaryTraversal(activeHierarchy, activeTraversal);
-  }, [activeTraversal, activeHierarchy]);
-
-  const activeBackendTraversal =
-    activeTraversal && backendState.status === 'success' && backendTraversal?.type === activeTraversal
-      ? backendTraversal
-      : null;
-
-  const traversalResult = activeBackendTraversal ?? clientTraversal;
-  const traversalSource: 'backend' | 'client' | null = !activeTraversal
-    ? null
-    : activeBackendTraversal
-    ? 'backend'
-    : 'client';
-
-  // Stepper Controls Handlers
-  const handleNextStep = () => {
-    if (!traversalResult || traversalResult.order.length === 0) return;
-    setCurrentStepIndex(prev => {
-      if (prev < 0) return 0;
-      return Math.min(prev + 1, traversalResult.order.length - 1);
-    });
+  const mutate = async (operation: () => Promise<unknown>, success: string) => {
+    setBusy(true); setError(null); setNotice(''); setPlaying(false);
+    try { await operation(); setNotice(success); reload(); return true; }
+    catch (reason) { setError(message(reason)); return false; }
+    finally { setBusy(false); }
   };
+  const selectNode = (id: string) => setSelectedNodeId(previous => previous === id ? null : id);
+  const selectedNode = hierarchy?.nodes.find(node => node.id === selectedNodeId) ?? null;
+  const currentStep = traversalResult?.order[currentStepIndex] ?? null;
+  const visitedIds = useMemo(() => traversalResult?.order.slice(0, Math.max(0, currentStepIndex)).map(step => step.id) ?? [], [traversalResult, currentStepIndex]);
+  const disabled = busy || loading || modal !== null;
+  const openModal = (next: 'create' | 'edit' | 'delete') => { if (!disabled) { setPlaying(false); setModal(next); } };
+  const completeModal = () => { setModal(null); setNotice('Hierarchy changes saved.'); reload(); };
 
-  const handlePrevStep = () => {
-    if (!traversalResult || traversalResult.order.length === 0) return;
-    setCurrentStepIndex(prev => Math.max(prev - 1, 0));
-  };
-
-  const handleResetSteps = () => {
-    setCurrentStepIndex(-1);
-  };
-
-  const handleStepSelect = (index: number) => {
-    if (!traversalResult || index < 0 || index >= traversalResult.order.length) return;
-    setCurrentStepIndex(index);
-  };
-
-  // Derive current traversal node ID and visited node IDs
-  const currentTraversalStep = (traversalResult && currentStepIndex >= 0 && currentStepIndex < traversalResult.order.length)
-    ? traversalResult.order[currentStepIndex]
-    : null;
-  const currentTraversalNodeId = currentTraversalStep?.id ?? null;
-  const currentTraversalStepNum = currentTraversalStep?.step ?? null;
-
-  const visitedNodeIds = useMemo(() => {
-    if (!traversalResult || currentStepIndex < 0) return [];
-    return traversalResult.order.slice(0, currentStepIndex).map(s => s.id);
-  }, [traversalResult, currentStepIndex]);
-
-  const isEmptyTree = activeHierarchy.nodes.length === 0 || !activeHierarchy.rootId;
-
-  return (
-    <div className="app-container">
-      <Navbar
-        mode={mode}
-        onModeChange={handleModeChange}
-        status={backendState.data}
-        isChecking={backendState.status === 'loading'}
-        onRefreshStatus={fetchStatus}
-        errorMessage={backendState.error}
-      />
-
-      <main className="main-content">
-        <header className="page-header">
-          <div className="page-header-text">
-            <div className="page-header-badge">
-              <span className="badge-dot" />
-              <span>{mode === 'org' ? 'Corporate Structure' : 'Genealogical Descent'}</span>
-            </div>
-            <h2 className="page-title">
-              {mode === 'org' ? 'Organization Hierarchy' : 'Family Hierarchy'}
-            </h2>
-            <p className="page-description">
-              {mode === 'org'
-                ? 'Interactive binary tree visualization modeling organizational reporting lines through Left-Child (subordinate) and Right-Sibling (peer) pointers.'
-                : 'Interactive binary tree visualization modeling genealogical lineages through Left-Child (first offspring) and Right-Sibling (sibling) pointers.'}
-            </p>
-          </div>
-        </header>
-
-        {isHierarchyLoading && (
-          <div className="system-loading-banner" style={{ margin: '0 0 1rem 0', padding: '0.6rem 1rem', background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.3)', borderRadius: '8px', color: '#93c5fd', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#60a5fa' }} />
-            <span>Loading authoritative tree structure from C++ backend...</span>
-          </div>
-        )}
-
-        {hierarchyError && (
-          <div className="system-error-banner" style={{ margin: '0 0 1rem 0', padding: '0.6rem 1rem', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: '8px', color: '#fca5a5', fontSize: '0.85rem' }}>
-            <strong>Backend Notice:</strong> {hierarchyError} (Displaying client demo hierarchy).
-          </div>
-        )}
-
-        <QuickInfoBar
-          mode={mode}
-          activeTraversal={activeTraversal}
-          status={backendState.data}
-          dataSource={dataSource}
-          stats={hierarchyStats}
-        />
-
-        <div className="workspace-grid">
-          <section className="canvas-section" aria-label="Hierarchy Canvas">
-            <TreeCanvas
-              data={activeHierarchy}
-              mode={mode}
-              activeTraversal={activeTraversal}
-              selectedNodeId={effectiveSelectedNodeId}
-              onSelectNode={handleSelectNode}
-              currentTraversalNodeId={currentTraversalNodeId}
-              traversalStepNumber={currentTraversalStepNum}
-              visitedNodeIds={visitedNodeIds}
-            />
-          </section>
-
-          <aside className="controls-sidebar" aria-label="Controls and Notes">
-            <NodeInspector
-              selectedNode={selectedNode}
-              allNodes={activeHierarchy.nodes}
-              onSelectNode={handleSelectNode}
-              onClearSelection={handleClearSelection}
-              onOpenCreateModal={() => setIsCreateModalOpen(true)}
-              onOpenEditModal={() => setIsEditModalOpen(true)}
-              onOpenDeleteModal={() => setIsDeleteModalOpen(true)}
-            />
-
-            <TraversalControls
-              activeTraversal={activeTraversal}
-              onSelectTraversal={handleSelectTraversal}
-              traversalResult={traversalResult}
-              traversalSource={traversalSource}
-              currentStepIndex={currentStepIndex}
-              onNextStep={handleNextStep}
-              onPrevStep={handlePrevStep}
-              onResetSteps={handleResetSteps}
-              onStepSelect={handleStepSelect}
-              isEmptyTree={isEmptyTree}
-            />
-
-            <div className="system-notes-card">
-              <h3 className="notes-title">System Architecture</h3>
-              <ul className="notes-list">
-                <li>
-                  <strong>Frontend:</strong> React 19 + TypeScript + Vite with custom SVG tree renderer.
-                </li>
-                <li>
-                  <strong>Backend:</strong> C++14 native WinSock2 HTTP server with complete CRUD and binary traversals.
-                </li>
-                <li>
-                  <strong>Representation:</strong> Left-Child Right-Sibling (LCRS) mapping arbitrary hierarchies to binary trees.
-                </li>
-                <li>
-                  <strong>C++ Standard:</strong> MinGW.org GCC 6.3.0 without <code>std::thread</code>.
-                </li>
-              </ul>
-            </div>
-          </aside>
+  return <div className="app-container">
+    <Navbar mode={mode} onModeChange={next => {
+      if (busy || modal || mode === next) return;
+      reload(); setMode(next); setSelectedNodeId(null); setActiveTraversal(null); setQuery(''); setSearching(false); setNotice('');
+    }} status={backendState.data} isChecking={backendState.status === 'loading'} onRefreshStatus={() => { setBackendState(previous => ({ ...previous, status: 'loading' })); void fetchStatus(); }} errorMessage={backendState.error} />
+    <main className="main-content">
+      <header className="page-header"><div className="page-header-text">
+        <div className="page-header-badge"><span className="badge-dot" />Live hierarchy workspace</div>
+        <h2 className="page-title">{mode === 'org' ? 'Organization' : 'Family'} Hierarchy</h2>
+        <p className="page-description">Explore relationships, manage members, and follow binary traversals computed by the C++ backend.</p>
+      </div></header>
+      <QuickInfoBar mode={mode} activeTraversal={activeTraversal} status={backendState.data} dataSource="backend" stats={stats} />
+      <section className="workspace-toolbar" aria-label="Hierarchy tools">
+        <label className="search-field">Find a member<input type="search" placeholder="Name, role, branch, or ID" value={query} disabled={!hierarchy || disabled} onChange={event => { setQuery(event.target.value); setSearchIds([]); setSearchError(null); setSearching(Boolean(event.target.value.trim())); }} /></label>
+        <div className="management-actions">
+          <button disabled={disabled} onClick={reload}>Refresh</button>
+          <button disabled={disabled || !hierarchy?.rootId} onClick={() => {
+            if (hierarchy?.rootId && window.confirm('Clear every member in this hierarchy? Export a backup first. This cannot be undone.')) void mutate(() => deleteMember(mode, hierarchy.rootId!), 'Hierarchy cleared and saved.');
+          }}>Clear hierarchy</button>
+          <button disabled={disabled || !hierarchy} onClick={async () => {
+            setBusy(true); setError(null);
+            try {
+              const data = await exportHierarchy(mode);
+              const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+              const link = document.createElement('a'); link.href = url; link.download = `${mode}-hierarchy.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+              setNotice('Hierarchy exported.');
+            } catch (reason) { setError(message(reason)); } finally { setBusy(false); }
+          }}>Export JSON</button>
+          <label className={`file-button ${disabled ? 'disabled' : ''}`}>Import JSON<input type="file" accept=".json,application/json" disabled={disabled} onChange={async event => {
+            const file = event.target.files?.[0]; event.target.value = ''; if (!file) return;
+            if (file.size > 512 * 1024) { setError('Import files must be smaller than 512 KB.'); return; }
+            if (!window.confirm(`Replace the entire ${mode === 'org' ? 'organization' : 'family'} hierarchy with ${file.name}? Export first if you need a backup.`)) return;
+            await mutate(async () => importHierarchy(mode, await file.text()), 'Hierarchy imported and saved.');
+          }} /></label>
         </div>
-
-        {/* Hierarchy Mutation Modals */}
-        {isCreateModalOpen && (
-          <NodeCreateModal
-            isOpen={isCreateModalOpen}
-            mode={mode}
-            existingNodes={activeHierarchy.nodes}
-            defaultParentId={selectedNodeId}
-            onClose={() => setIsCreateModalOpen(false)}
-            onNodeCreated={handleNodeCreated}
-          />
-        )}
-
-        {isEditModalOpen && selectedNode && (
-          <NodeEditModal
-            isOpen={isEditModalOpen}
-            mode={mode}
-            node={selectedNode}
-            onClose={() => setIsEditModalOpen(false)}
-            onNodeUpdated={handleNodeUpdated}
-          />
-        )}
-
-        {isDeleteModalOpen && selectedNode && (
-          <DeleteConfirmModal
-            isOpen={isDeleteModalOpen}
-            mode={mode}
-            node={selectedNode}
-            allNodes={activeHierarchy.nodes}
-            rootId={activeHierarchy.rootId}
-            onClose={() => setIsDeleteModalOpen(false)}
-            onConfirmDelete={handleNodeDeleted}
-          />
-        )}
-      </main>
-
-      <footer className="app-footer">
-        <p>
-          Data Structures Academic Project — <strong>Organization & Family Hierarchy Explorer</strong> (C++14 & React)
-        </p>
-      </footer>
-    </div>
-  );
+        {stats && <p className="workspace-metrics" aria-live="polite"><strong>{stats.totalMembers}</strong> members <span>·</span> Binary height <strong>{stats.binaryTreeHeight}</strong></p>}
+      </section>
+      {query.trim() && <section className="search-results" aria-label="Search results" aria-live="polite">
+        <p>{searching ? 'Searching…' : searchError ?? `${searchIds.length} matching members`}</p>
+        {searchIds.map(id => <button key={id} onClick={() => setSelectedNodeId(id)} aria-pressed={selectedNodeId === id}>{hierarchy?.nodes.find(node => node.id === id)?.name ?? id}</button>)}
+      </section>}
+      {error && <div className="request-error" role="alert">{error} <button disabled={disabled} onClick={reload}>Retry loading</button></div>}
+      {notice && <p className="request-notice" role="status">{notice}</p>}
+      {loading && <p role="status">Loading hierarchy and statistics…</p>}
+      {hierarchy && <div className="workspace-grid" aria-busy={busy}>
+        <section className="canvas-section" aria-label="Hierarchy Canvas"><TreeCanvas data={hierarchy} mode={mode} activeTraversal={activeTraversal} selectedNodeId={selectedNodeId} onSelectNode={selectNode} highlightedNodeIds={searchIds} currentTraversalNodeId={currentStep?.id ?? null} traversalStepNumber={currentStep?.step ?? null} visitedNodeIds={visitedIds} /></section>
+        <aside className="controls-sidebar" aria-label="Controls and Notes">
+          <NodeInspector selectedNode={selectedNode} allNodes={hierarchy.nodes} onSelectNode={selectNode} onClearSelection={() => setSelectedNodeId(null)} onOpenCreateModal={() => openModal('create')} onOpenEditModal={() => openModal('edit')} onOpenDeleteModal={() => openModal('delete')} />
+          {hierarchy.nodes.length === 0 && <MemberEditor key={`${mode}:${revision}`} selected={null} empty busy={disabled} onAdd={fields => mutate(() => addMember(mode, fields), 'Root member added and saved.')} onEdit={() => Promise.resolve(false)} onDelete={() => {}} />}
+          {traversalError && <div className="request-error" role="alert">{traversalError} <button onClick={reload}>Retry traversal</button></div>}
+          {activeTraversal && !traversalResult && !traversalError && <p role="status">Loading C++ traversal…</p>}
+          <TraversalControls activeTraversal={activeTraversal} onSelectTraversal={type => { if (!busy) { resetTraversal(); setActiveTraversal(previous => previous === type ? null : type); } }} traversalResult={traversalResult} traversalSource={traversalResult ? 'backend' : null} currentStepIndex={currentStepIndex} onNextStep={() => { setPlaying(false); setCurrentStepIndex(step => Math.min(step + 1, (traversalResult?.order.length ?? 1) - 1)); }} onPrevStep={() => { setPlaying(false); setCurrentStepIndex(step => Math.max(step - 1, 0)); }} onResetSteps={() => { setPlaying(false); setCurrentStepIndex(-1); }} onStepSelect={index => { setPlaying(false); setCurrentStepIndex(index); }} isEmptyTree={hierarchy.nodes.length === 0} />
+          {traversalResult && <section className="playback-controls" aria-label="Traversal playback">
+            <button disabled={!traversalResult.order.length || busy} onClick={() => { if (!playing && currentStepIndex >= traversalResult.order.length - 1) setCurrentStepIndex(-1); setPlaying(value => !value); }}>{playing ? 'Pause' : 'Play traversal'}</button>
+            <label>Step speed<select value={speed} onChange={event => setSpeed(Number(event.target.value))}><option value={1400}>Slow · 1.4s</option><option value={800}>Normal · 0.8s</option><option value={350}>Fast · 0.35s</option></select></label>
+          </section>}
+        </aside>
+      </div>}
+      {hierarchy && modal === 'create' && <NodeCreateModal isOpen mode={mode} existingNodes={hierarchy.nodes} defaultParentId={selectedNodeId} onClose={() => setModal(null)} onNodeCreated={completeModal} />}
+      {hierarchy && modal === 'edit' && selectedNode && <NodeEditModal key={selectedNode.id} isOpen mode={mode} node={selectedNode} onClose={() => setModal(null)} onNodeUpdated={completeModal} />}
+      {hierarchy && modal === 'delete' && selectedNode && <DeleteConfirmModal isOpen mode={mode} node={selectedNode} allNodes={hierarchy.nodes} rootId={hierarchy.rootId} onClose={() => setModal(null)} onConfirmDelete={completeModal} />}
+    </main>
+    <footer className="app-footer"><p>Organization &amp; Family Hierarchy Explorer · C++14 &amp; React · Left-Child Right-Sibling trees</p></footer>
+  </div>;
 }
-
 export default App;

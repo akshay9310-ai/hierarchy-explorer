@@ -21,9 +21,9 @@ The project demonstrates the core binary tree traversal algorithms:
   * **Edit Member:** Update member names, roles, and departments via live REST endpoints while preserving tree structure.
   * **Delete Member:** Safely remove nodes with automatic cascading deletion of subordinate subtrees and dynamic sibling rewiring.
   * **Root-Deletion Safety Protection:** Prevents deleting the hierarchy root node, ensuring tree stability.
-* **Native C++14 HTTP Engine:** Self-contained REST server built directly on native Windows Sockets 2 (`ws2_32`) with zero external web or JSON framework dependencies.
+* **Native C++14 HTTP Engine:** Self-contained REST server using Windows Sockets 2 (`ws2_32`) or Linux POSIX sockets with zero external web or JSON framework dependencies.
 * **Interactive SVG Canvas:** Custom layout engine mapping tree nodes and parent/child/sibling relationship lines without third-party canvas libraries.
-* **Dual-State Resilience:** Real-time backend status polling with automatic, seamless fallback to client-side demo mode when the C++ server is offline.
+* **Connection Feedback:** Real-time backend status polling, request errors, and retry controls. Hierarchies and traversal results come from the C++ API.
 
 ---
 
@@ -236,6 +236,35 @@ npm run dev
 
 ---
 
+## API Integration and Persistence
+
+The frontend loads both hierarchy data and statistics from the API. Select a node to add children, edit its details, or delete its descendant branch. Search matches names, roles, departments, and IDs and highlights matching nodes. Export creates a JSON backup; Import replaces the selected mode after confirmation and server validation.
+
+Preorder, inorder, and postorder sequences come from the C++ API. Use Play/Pause, speed selection, Previous/Next, and Reset to follow the sequence on the canvas. Mutations refresh hierarchy data, statistics, and any active traversal. Loading failures show a retry action rather than demo data.
+
+Changes persist in `backend/data/org.json` and `backend/data/family.json` when the server is launched from `backend/`. Keep these files to retain your data between runs. They are excluded from Git. Deletion is permanent unless you have an exported backup; sibling branches are preserved. The inspector's delete dialog protects the root; the explicit Clear hierarchy action clears a whole tree after confirmation and allows creating a new root.
+
+### Windows toolchain shortcut
+
+If MinGW is installed under `C:\msys64\ucrt64\bin` but is not on PATH, use:
+
+```powershell
+$env:Path = 'C:\msys64\ucrt64\bin;' + $env:Path
+mingw32-make server
+.\hierarchy_server.exe
+```
+
+In the frontend terminal use `npm.cmd run dev` if PowerShell blocks `npm.ps1`.
+
+## Current Implementation Limitations
+
+* **Toolchain Constraints:** MinGW.org GCC 6.3 uses the `win32` thread model, which does not provide `std::thread`. To ensure 100% build compatibility without altering the host environment, the backend uses a native single-threaded WinSock2 event loop with `select()`.
+* **JSON Serialization:** Milestone 2 uses lightweight, safely escaped JSON responses without pulling in heavy external JSON libraries.
+* **Persistence:** Local JSON snapshots support a single server process; concurrent writers and database transactions are outside the current scope.
+* **Scope:** Editing covers member details. Moving branches and undo history are not implemented. Hierarchies are limited to 1000 members; member text fields allow up to 200 UTF-8 bytes.
+
+---
+
 ## 10. Cloud Deployment (Render & Vercel)
 
 The application is structured for cloud hosting with the **C++ REST Backend deployed on Render** (via Docker) and the **React + Vite Frontend deployed on Vercel**.
@@ -254,6 +283,7 @@ The backend includes a cross-platform socket layer that compiles into a lightwei
 3. **Configure Environment Variables:**
    * `PORT`: `8080` *(Render sets this automatically; the server reads `PORT` from environment)*
    * `FRONTEND_ORIGIN`: `https://<your-app>.vercel.app` *(Optional: restricts CORS to your Vercel domain; by default `.vercel.app` and localhost origins are permitted)*
+   * `DATA_DIR`: Path to a mounted persistent disk for saved hierarchies (for example `/var/data`). The default `data/` directory is local to the container and is lost when an ephemeral container is replaced. Configure a persistent disk if data must survive redeployments.
 4. **Health Check:** Set Health Check Path to `/api/status` (returns `200 OK` with JSON metadata).
 5. **Deploy:** Render builds `backend/Dockerfile` using GCC 12, runs unit/API tests during build, and starts the container on `0.0.0.0:${PORT}`.
 
@@ -367,8 +397,8 @@ hierarchy-explorer/
 
 ## 13. Known Limitations
 
-* **In-Memory Backend Storage:** Hierarchy fixtures and runtime modifications (member additions, edits, deletions) are held strictly in server memory. Restarting `hierarchy_server.exe` resets trees to default fixtures. Durable database persistence is not implemented.
-* **Root-Deletion Rejection:** The root node (`org-ceo` in organization mode and `fam-patriarch` in family mode) cannot be deleted. Any delete request targeting the root is rejected with `400 Bad Request` to preserve tree hierarchy integrity.
+* **File-Based Backend Storage:** JSON snapshots persist changes across process restarts. Cloud redeployments require a mounted persistent disk configured through `DATA_DIR`; database and concurrent-writer support are not implemented.
+* **Root-Deletion Protection:** The compatibility `DELETE /api/hierarchy/member` route and its inspector dialog reject root deletion. The newer `DELETE /api/hierarchy/nodes/:id` route permits it for the explicit Clear hierarchy workflow.
 * **No Automated Browser Testing:** The repository does not include automated end-to-end browser test suites (e.g., Playwright or Cypress). The frontend UI is verified through interactive manual browser testing, complemented by automated C++ engine unit tests, REST contract tests, Oxlint linting, and TypeScript compilation checks.
 * **Single-Threaded Architecture:** On Windows, MinGW.org GCC 6.3 operates on the `win32` threading model and does not provide standard `<thread>`. The backend HTTP server is purposefully implemented with a portable single-threaded, non-blocking `select()` event loop to ensure clean, identical execution across both local MinGW Windows environments and Render Linux container environments without external runtime dependencies.
 * **LCRS Child Insertion:** Member creation adds nodes exclusively as direct subordinate children (`relation: "child"`). Sibling relationships are maintained and linked internally by the LCRS data structure.
@@ -379,9 +409,9 @@ hierarchy-explorer/
 ## 14. Troubleshooting & FAQ
 
 ### 1. Vite Proxy Error (`502 Bad Gateway` / `ECONNREFUSED`)
-* **Symptom:** Terminal displays `[vite] http proxy error: /api/status -> ECONNREFUSED`, or the frontend displays the yellow `🟡 Local Demo (Offline)` indicator.
+* **Symptom:** Terminal displays `[vite] http proxy error: /api/status -> ECONNREFUSED`, or the frontend reports a backend connection error.
 * **Cause:** The C++ backend server is not running on port 8080.
-* **Solution:** Open a terminal and run `mingw32-make run` in `backend/`. The frontend automatically polls the backend every 10 seconds and will seamlessly reconnect, or you can click the status pill in the navigation bar to trigger an immediate check.
+* **Solution:** Open a terminal and run `mingw32-make run` in `backend/`. The frontend polls backend health every 10 seconds. Use Retry loading or Refresh to reload hierarchy data after the backend becomes available.
 
 ### 2. Port 8080 Already in Use (`WSAEADDRINUSE` / Bind Error 10048)
 * **Symptom:** Backend outputs `[HttpServer] bind failed: 10048`.
@@ -405,4 +435,4 @@ hierarchy-explorer/
   Or add `C:\MinGW\bin` permanently to your Windows Environment Variables under System Settings.
 
 ### 4. How to Reset Tree Data to Defaults
-* **Solution:** Stop the backend server with `Ctrl+C` in its terminal window, then restart it with `mingw32-make run`. The default organization and family fixtures will be reloaded into memory.
+* **Solution:** Export a backup, stop the backend, and move the selected mode's save file (`data/org.json` or `data/family.json`, or its equivalent under `DATA_DIR`) to a backup location. Restart the backend to load that mode's default fixtures.

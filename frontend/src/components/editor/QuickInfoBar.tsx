@@ -50,4 +50,3 @@ export const QuickInfoBar: React.FC<QuickInfoBarProps> = ({
     </div>
   );
 };
-

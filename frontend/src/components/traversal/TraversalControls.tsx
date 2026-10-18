@@ -107,7 +107,7 @@ export const TraversalControls: React.FC<TraversalControlsProps> = ({
               <span className="source-label">
                 {traversalSource === 'backend'
                   ? 'Source: C++ WinSock2 API'
-                  : 'Source: Client LCRS Engine (Milestone 1 Fallback)'}
+                  : traversalSource === 'client' ? 'Source: Client LCRS Engine' : 'Waiting for C++ API'}
               </span>
             </div>
           </div>
@@ -189,7 +189,7 @@ export const TraversalControls: React.FC<TraversalControlsProps> = ({
               </div>
             ) : (
               <p className="empty-sequence-text">
-                No nodes available for traversal in the current hierarchy.
+                {isEmptyTree ? 'No nodes available for traversal in the current hierarchy.' : 'Waiting for the traversal result.'}
               </p>
             )}
           </div>

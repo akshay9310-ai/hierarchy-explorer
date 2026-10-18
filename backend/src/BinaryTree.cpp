@@ -1,6 +1,28 @@
 #include "BinaryTree.hpp"
 #include <algorithm>
 
+void BinaryTree::swap(BinaryTree& other) {
+    std::swap(root, other.root);
+    nodeRegistry.swap(other.nodeRegistry);
+}
+
+bool BinaryTree::removeMember(const std::string& id) {
+    TreeNode* node = find(id);
+    if (!node) return false;
+    if (node == root) { clear(); return true; }
+    TreeNode* parent = find(node->parentId);
+    TreeNode** link = &parent->left;
+    while (*link && *link != node) link = &(*link)->right;
+    if (!*link) return false;
+    *link = node->right;
+    node->right = nullptr; // A member's siblings are not its descendants.
+    std::vector<const TreeNode*> removed;
+    preorderHelper(node, removed);
+    for (const TreeNode* item : removed) nodeRegistry.erase(item->id);
+    destroySubtree(node);
+    return true;
+}
+
 BinaryTree::BinaryTree() : root(nullptr) {}
 
 BinaryTree::~BinaryTree() {
