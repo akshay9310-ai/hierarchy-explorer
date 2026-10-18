@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import type { HierarchyMode, TreeNodeDto } from '../../api/types';
 import { getDescendantImpact } from '../../utils/treeMutation';
+import { deleteBackendMember } from '../../api/client';
 
 export interface DeleteConfirmModalProps {
   isOpen: boolean;
@@ -46,24 +47,50 @@ export const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
   const handleConfirm = async () => {
     if (isSubmitting) return;
 
+    if (impact?.isRoot) {
+      setFeedback({
+        type: 'error',
+        message: 'Root Member Cannot Be Deleted',
+        details: 'The root member anchors the entire hierarchy tree and cannot be deleted.',
+      });
+      return;
+    }
+
     setIsSubmitting(true);
     setFeedback(null);
 
-    // Simulate backend check / contract status verification
-    setTimeout(() => {
-      setIsSubmitting(false);
-      // Per docs/api-contract.md and HttpServer.cpp, DELETE /api/hierarchy/member is not implemented
-      setFeedback({
-        type: 'warning',
-        message: 'Backend API Route Unavailable (Milestone 1 Boundary)',
-        details:
-          'DELETE /api/hierarchy/member is not supported by the C++ backend or defined in the Milestone 1 contract. The node was not deleted to preserve data integrity.',
-      });
+    try {
+      const response = await deleteBackendMember(mode, node.id);
 
-      if (onConfirmDelete) {
-        onConfirmDelete(node.id);
+      if (response.status === 'success' && response.data) {
+        setFeedback({
+          type: 'success',
+          message: `Member "${node.name}" (${response.data.deletedCount} member${response.data.deletedCount === 1 ? '' : 's'}) deleted from C++ backend.`,
+        });
+
+        if (onConfirmDelete) {
+          onConfirmDelete(node.id);
+        }
+        setTimeout(() => {
+          onClose();
+        }, 700);
+      } else {
+        setFeedback({
+          type: 'error',
+          message: 'Deletion Failed',
+          details: response.error || 'The backend rejected the deletion request.',
+        });
       }
-    }, 450);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Network request failed';
+      setFeedback({
+        type: 'error',
+        message: 'Network / API Error',
+        details: msg,
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -80,10 +107,10 @@ export const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
         <div className="modal-header">
           <div className="modal-title-group">
             <span className="modal-badge danger">
-              {mode === 'org' ? '🏢 Delete Organization Node' : '🌳 Delete Family Node'}
+              {mode === 'org' ? '🏢 Delete Organization Member' : '🌳 Delete Family Member'}
             </span>
             <h2 id="delete-node-modal-title" className="modal-title text-danger">
-              Confirm Node Deletion
+              Confirm Member Deletion
             </h2>
           </div>
           <button
@@ -100,8 +127,7 @@ export const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
         <div className="modal-api-notice">
           <span className="notice-icon">ℹ️</span>
           <p className="notice-text">
-            <strong>Backend API Status:</strong> Node deletion is not implemented in the C++ backend in Milestone 1.
-            Proceeding will check backend capability and report server status without deleting local data.
+            <strong>Live C++ API:</strong> Deleting this member will be persisted to the WinSock2 server (<code>DELETE /api/hierarchy/member</code>). Removing a member also safely cascades to all subordinates/descendants to prevent orphaned nodes.
           </p>
         </div>
 
@@ -193,14 +219,15 @@ export const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
             type="button"
             className="btn-modal-danger"
             onClick={handleConfirm}
-            disabled={isSubmitting}
+            disabled={isSubmitting || impact?.isRoot}
+            title={impact?.isRoot ? 'Root member cannot be deleted' : undefined}
           >
             {isSubmitting ? (
               <span className="btn-spinner-content">
                 <span className="spinner-dot" /> Deleting...
               </span>
             ) : (
-              'Confirm Deletion'
+              'Delete Member'
             )}
           </button>
         </div>

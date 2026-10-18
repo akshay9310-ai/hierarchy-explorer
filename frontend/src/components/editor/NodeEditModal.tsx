@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { HierarchyMode, TreeNodeDto, UpdateMemberRequest } from '../../api/types';
+import { updateBackendMember } from '../../api/client';
 
 export interface NodeEditModalProps {
   isOpen: boolean;
@@ -79,28 +80,45 @@ export const NodeEditModal: React.FC<NodeEditModalProps> = ({
     setFeedback(null);
 
     const updates: UpdateMemberRequest = {
+      mode,
       id: node.id,
       name: name.trim(),
       role: role.trim(),
       department: department.trim() ? department.trim() : undefined,
     };
 
-    // Simulate backend check / contract status verification
-    setTimeout(() => {
-      setIsSubmitting(false);
-      // Per docs/api-contract.md and HttpServer.cpp, PUT/PATCH /api/hierarchy/member is not implemented
-      setFeedback({
-        type: 'warning',
-        message: 'Backend API Route Unavailable (Milestone 1 Boundary)',
-        details:
-          'Node editing endpoints (PUT/PATCH /api/hierarchy/member) are not defined in the backend API contract. Changes cannot be persisted to the C++ server. Local demo data was preserved.',
-      });
+    try {
+      const response = await updateBackendMember(updates);
 
-      if (onNodeUpdated) {
-        // Callback available if parent component enables state updates
-        onNodeUpdated(updates);
+      if (response.status === 'success' && response.data) {
+        setFeedback({
+          type: 'success',
+          message: `Member "${response.data.member.name}" successfully updated in C++ backend.`,
+        });
+
+        if (onNodeUpdated) {
+          onNodeUpdated(updates);
+        }
+        setTimeout(() => {
+          onClose();
+        }, 700);
+      } else {
+        setFeedback({
+          type: 'error',
+          message: 'Update Failed',
+          details: response.error || 'The backend rejected the update request.',
+        });
       }
-    }, 400);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Network request failed';
+      setFeedback({
+        type: 'error',
+        message: 'Network / API Error',
+        details: msg,
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -120,7 +138,7 @@ export const NodeEditModal: React.FC<NodeEditModalProps> = ({
               {mode === 'org' ? '🏢 Edit Organization Member' : '🌳 Edit Family Member'}
             </span>
             <h2 id="edit-node-modal-title" className="modal-title">
-              Edit Node Details
+              Edit Member Details
             </h2>
           </div>
           <button
@@ -137,8 +155,7 @@ export const NodeEditModal: React.FC<NodeEditModalProps> = ({
         <div className="modal-api-notice">
           <span className="notice-icon">ℹ️</span>
           <p className="notice-text">
-            <strong>Backend API Status:</strong> Node editing (<code>PUT /api/hierarchy/member</code>) is not yet
-            supported by the C++ backend or defined in the Milestone 1 contract. Form inputs are validated cleanly.
+            <strong>Live C++ API:</strong> Changes will be persisted to the WinSock2 server (<code>PUT /api/hierarchy/member</code>). Structural parent, child, and sibling pointers will remain intact.
           </p>
         </div>
 
@@ -238,7 +255,7 @@ export const NodeEditModal: React.FC<NodeEditModalProps> = ({
             >
               {isSubmitting ? (
                 <span className="btn-spinner-content">
-                  <span className="spinner-dot" /> Saving...
+                  <span className="spinner-dot" /> Updating...
                 </span>
               ) : (
                 'Save Changes'

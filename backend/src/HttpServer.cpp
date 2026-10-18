@@ -375,6 +375,82 @@ std::string HttpServer::routeRequest(const std::string& method, const std::strin
              << jsonEscape(mode) << "\",\"totalMembers\":" << tree->getNodeCount() << '}';
         return buildResponse(201, "Created", "application/json; charset=utf-8", json.str());
     }
+    if (method == "PUT" && path == "/api/hierarchy/member") {
+        std::unordered_map<std::string, std::string> values;
+        if (!parseFlatJsonObject(body, values))
+            return errorResponse(400, "Bad Request", "Invalid JSON", "Body must be a flat JSON object with string values", path);
+        const std::string mode = valueOf(values, "mode");
+        const std::string id = valueOf(values, "id");
+        const std::string name = valueOf(values, "name");
+        const std::string role = valueOf(values, "role");
+        const std::string department = valueOf(values, "department");
+        BinaryTree* tree = treeForMode(mode);
+        if (!tree) return errorResponse(400, "Bad Request", "Invalid Request", "mode must be org or family", path);
+        if (id.empty() || name.empty() || role.empty())
+            return errorResponse(400, "Bad Request", "Invalid Request", "id, name, and role are required", path);
+        if (id.size() > 64 || name.size() > 100 || role.size() > 100 || department.size() > 100)
+            return errorResponse(400, "Bad Request", "Invalid Request", "Input length exceeds allowed maximum", path);
+        const auto res = tree->updateMember(id, name, role, department);
+        if (res == BinaryTree::UpdateResult::NOT_FOUND)
+            return errorResponse(404, "Not Found", "Not Found", "Member does not exist", path);
+        if (res == BinaryTree::UpdateResult::INVALID_INPUT)
+            return errorResponse(400, "Bad Request", "Invalid Request", "name and role cannot be empty", path);
+
+        const TreeNode* updated = tree->find(id);
+        std::ostringstream json;
+        json << "{\"member\":{\"id\":\"" << jsonEscape(updated->id)
+             << "\",\"name\":\"" << jsonEscape(updated->name)
+             << "\",\"role\":\"" << jsonEscape(updated->role)
+             << "\",\"department\":\"" << jsonEscape(updated->department)
+             << "\",\"parentId\":";
+        if (updated->parentId.empty()) json << "null"; else json << "\"" << jsonEscape(updated->parentId) << "\"";
+        json << ",\"leftChildId\":";
+        if (updated->left) json << "\"" << jsonEscape(updated->left->id) << "\""; else json << "null";
+        json << ",\"rightSiblingId\":";
+        if (updated->right) json << "\"" << jsonEscape(updated->right->id) << "\""; else json << "null";
+        json << "},\"mode\":\"" << jsonEscape(mode) << "\",\"totalMembers\":" << tree->getNodeCount() << '}';
+        return buildResponse(200, "OK", "application/json; charset=utf-8", json.str());
+    }
+    if (method == "DELETE" && path == "/api/hierarchy/member") {
+        std::string mode, id;
+        const auto modeIt = params.find("mode");
+        const auto idIt = params.find("id");
+        if (modeIt != params.end()) mode = modeIt->second;
+        if (idIt != params.end()) id = idIt->second;
+
+        if ((mode.empty() || id.empty()) && !body.empty()) {
+            std::unordered_map<std::string, std::string> values;
+            if (parseFlatJsonObject(body, values)) {
+                if (mode.empty()) mode = valueOf(values, "mode");
+                if (id.empty()) id = valueOf(values, "id");
+            }
+        }
+
+        BinaryTree* tree = treeForMode(mode);
+        if (!tree) return errorResponse(400, "Bad Request", "Invalid Request", "mode must be org or family", path);
+        if (id.empty())
+            return errorResponse(400, "Bad Request", "Invalid Request", "id is required", path);
+
+        std::vector<std::string> deletedIds;
+        const auto res = tree->deleteMember(id, deletedIds);
+        if (res == BinaryTree::DeleteResult::NOT_FOUND)
+            return errorResponse(404, "Not Found", "Not Found", "Member does not exist", path);
+        if (res == BinaryTree::DeleteResult::ROOT_NODE)
+            return errorResponse(400, "Bad Request", "Invalid Request", "Root member cannot be deleted", path);
+        if (res == BinaryTree::DeleteResult::FAILED)
+            return errorResponse(500, "Internal Server Error", "Internal Server Error", "Failed to delete member", path);
+
+        std::ostringstream json;
+        json << "{\"deletedMemberId\":\"" << jsonEscape(id)
+             << "\",\"deletedCount\":" << deletedIds.size()
+             << ",\"deletedNodeIds\":[";
+        for (size_t i = 0; i < deletedIds.size(); ++i) {
+            if (i) json << ',';
+            json << "\"" << jsonEscape(deletedIds[i]) << "\"";
+        }
+        json << "],\"mode\":\"" << jsonEscape(mode) << "\",\"totalMembers\":" << tree->getNodeCount() << '}';
+        return buildResponse(200, "OK", "application/json; charset=utf-8", json.str());
+    }
     return errorResponse(405, "Method Not Allowed", "Method Not Allowed",
                          "HTTP method is not supported for this endpoint", path);
 }

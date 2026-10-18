@@ -104,9 +104,9 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
             type="button"
             className="inspector-action-btn edit-btn"
             onClick={onOpenEditModal}
-            title="Edit node name, role, or department"
+            title="Edit member name, role, or department via live C++ backend API"
           >
-            ✎ Edit
+            ✎ Edit Member
           </button>
         )}
         {onOpenCreateModal && (
@@ -114,7 +114,7 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
             type="button"
             className="inspector-action-btn add-btn"
             onClick={onOpenCreateModal}
-            title="Add a subordinate or sibling to this node"
+            title="Add a subordinate child to this node via live C++ backend API"
           >
             + Add Child
           </button>
@@ -124,9 +124,9 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
             type="button"
             className="inspector-action-btn delete-btn"
             onClick={onOpenDeleteModal}
-            title="Delete this node and inspect descendant impact"
+            title="Delete this member and inspect subordinate impact via live C++ backend API"
           >
-            🗑 Delete...
+            🗑 Delete Member
           </button>
         )}
       </div>

@@ -23,7 +23,6 @@ export const NodeCreateModal: React.FC<NodeCreateModalProps> = ({
   const [role, setRole] = useState('');
   const [department, setDepartment] = useState('');
   const [parentId, setParentId] = useState<string>(defaultParentId ?? (existingNodes[0]?.id ?? ''));
-  const [relation, setRelation] = useState<'child' | 'sibling'>('child');
   const [customId, setCustomId] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{
@@ -121,7 +120,7 @@ export const NodeCreateModal: React.FC<NodeCreateModalProps> = ({
       role: role.trim(),
       department: department.trim() ? department.trim() : undefined,
       parentId: existingNodes.length > 0 ? parentId : null,
-      relation,
+      relation: 'child',
     };
 
     try {
@@ -129,24 +128,22 @@ export const NodeCreateModal: React.FC<NodeCreateModalProps> = ({
       const response = await createBackendMember(payload);
 
       if (response.status === 'success' && response.data) {
+        const created = response.data.member;
         setFeedback({
           type: 'success',
-          message: `Member "${payload.name}" successfully created in backend.`,
+          message: `Member "${created.name}" successfully created in C++ backend (Total members: ${response.data.totalMembers}).`,
         });
         if (onNodeCreated) {
           onNodeCreated(payload);
         }
         setTimeout(() => {
           onClose();
-        }, 1200);
+        }, 1000);
       } else {
-        // Backend returned 404 or offline (Expected in Milestone 1)
         setFeedback({
-          type: 'warning',
-          message: 'Backend API Route Unavailable (Milestone 1 Boundary)',
-          details:
-            response.error ||
-            'POST /api/hierarchy/member is planned for Milestone 2 and not yet implemented in the C++ backend. Changes cannot be persisted to the server. Local demo data was preserved.',
+          type: 'error',
+          message: 'Member Creation Failed',
+          details: response.error || 'The backend rejected the insertion request.',
         });
       }
     } catch (err: unknown) {
@@ -195,11 +192,12 @@ export const NodeCreateModal: React.FC<NodeCreateModalProps> = ({
         <div className="modal-api-notice">
           <span className="notice-icon">ℹ️</span>
           <p className="notice-text">
-            <strong>Milestone 1 API Status:</strong> The C++ backend currently implements{' '}
-            <code>GET /api/status</code>. The member insertion route (<code>POST /api/hierarchy/member</code>) is planned
-            for Milestone 2. Submitting this form validates input schemas without modifying mock data.
+            <strong>Backend Integration:</strong> Member creation is handled live via{' '}
+            <code>POST /api/hierarchy/member</code>. In LCRS representation, new members are inserted as
+            subordinates under the selected parent.
           </p>
         </div>
+
 
         {feedback && (
           <div className={`modal-feedback-banner ${feedback.type}`} role="alert" aria-live="polite">
@@ -312,33 +310,18 @@ export const NodeCreateModal: React.FC<NodeCreateModalProps> = ({
             <div className="form-group">
               <span className="form-label">Binary Pointer Placement</span>
               <div className="relation-radio-group">
-                <label className={`radio-pill ${relation === 'child' ? 'selected' : ''}`}>
+                <label className="radio-pill selected">
                   <input
                     type="radio"
                     name="relation"
                     value="child"
-                    checked={relation === 'child'}
-                    onChange={() => setRelation('child')}
+                    checked={true}
+                    readOnly
                     disabled={isSubmitting}
                   />
                   <div className="radio-content">
-                    <span className="radio-title">First Child (Left Pointer)</span>
-                    <span className="radio-desc">Subordinate / descendant branch</span>
-                  </div>
-                </label>
-
-                <label className={`radio-pill ${relation === 'sibling' ? 'selected' : ''}`}>
-                  <input
-                    type="radio"
-                    name="relation"
-                    value="sibling"
-                    checked={relation === 'sibling'}
-                    onChange={() => setRelation('sibling')}
-                    disabled={isSubmitting}
-                  />
-                  <div className="radio-content">
-                    <span className="radio-title">Next Sibling (Right Pointer)</span>
-                    <span className="radio-desc">Peer on same hierarchy level</span>
+                    <span className="radio-title">First Child / Subordinate (Left Pointer)</span>
+                    <span className="radio-desc">Attaches as subordinate under the selected parent node.</span>
                   </div>
                 </label>
               </div>

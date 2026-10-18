@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type {
   HierarchyData,
   HierarchyMode,
+  HierarchyStats,
   TraversalResult,
   TraversalType,
   BackendStatus,
@@ -9,7 +10,12 @@ import type {
   InsertMemberRequest,
   UpdateMemberRequest,
 } from './api/types';
-import { getBackendStatus } from './api/client';
+import {
+  getBackendStatus,
+  getHierarchy,
+  getHierarchyTraversal,
+  getHierarchyStats,
+} from './api/client';
 import { computeBinaryTraversal } from './utils/binaryTraversal';
 import {
   insertMemberIntoHierarchy,
@@ -123,7 +129,14 @@ export function App() {
   const [orgHierarchy, setOrgHierarchy] = useState<HierarchyData>(FRONTEND_DEMO_ORG_HIERARCHY);
   const [familyHierarchy, setFamilyHierarchy] = useState<HierarchyData>(FRONTEND_DEMO_FAMILY_HIERARCHY);
 
+  // Backend / demo data source tracking and live statistics
+  const [dataSource, setDataSource] = useState<'backend' | 'demo'>('demo');
+  const [hierarchyStats, setHierarchyStats] = useState<HierarchyStats | null>(null);
+  const [isHierarchyLoading, setIsHierarchyLoading] = useState(false);
+  const [hierarchyError, setHierarchyError] = useState<string | null>(null);
+
   const [activeTraversal, setActiveTraversal] = useState<TraversalType | null>(null);
+  const [backendTraversal, setBackendTraversal] = useState<TraversalResult | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
   // Modal Dialog Visibility States
@@ -139,21 +152,77 @@ export function App() {
     statusCode: null,
   });
 
+  const backendOnlineRef = useRef(false);
+
   // Traversal stepper step index (-1: unstarted, 0..N-1: active step)
   const [currentStepIndex, setCurrentStepIndex] = useState<number>(-1);
+
+  // Load authoritative hierarchy and statistics from backend
+  const loadHierarchy = useCallback(async (targetMode: HierarchyMode) => {
+    setIsHierarchyLoading(true);
+    setHierarchyError(null);
+    try {
+      const [hierRes, statsRes] = await Promise.all([
+        getHierarchy(targetMode),
+        getHierarchyStats(targetMode),
+      ]);
+
+      if (hierRes.status === 'success' && hierRes.data) {
+        if (targetMode === 'org') {
+          setOrgHierarchy(hierRes.data);
+        } else {
+          setFamilyHierarchy(hierRes.data);
+        }
+        setDataSource('backend');
+      } else {
+        setDataSource('demo');
+        if (hierRes.error) {
+          setHierarchyError(hierRes.error);
+        }
+      }
+
+      if (statsRes.status === 'success' && statsRes.data) {
+        setHierarchyStats(statsRes.data);
+      } else {
+        setHierarchyStats(null);
+      }
+    } catch (err) {
+      setDataSource('demo');
+      setHierarchyError(err instanceof Error ? err.message : 'Failed to load hierarchy');
+    } finally {
+      setIsHierarchyLoading(false);
+    }
+  }, []);
 
   const fetchStatus = useCallback(async () => {
     setBackendState(prev => ({ ...prev, status: 'loading' }));
     const result = await getBackendStatus();
     setBackendState(result);
-  }, []);
+    if (result.status === 'success') {
+      backendOnlineRef.current = true;
+      await loadHierarchy(mode);
+    } else {
+      backendOnlineRef.current = false;
+      setDataSource('demo');
+      setHierarchyStats(null);
+    }
+  }, [mode, loadHierarchy]);
 
   useEffect(() => {
     let isCancelled = false;
     const poll = async () => {
       const result = await getBackendStatus();
       if (!isCancelled) {
+        const wasOffline = !backendOnlineRef.current;
+        const isOnline = result.status === 'success';
+        backendOnlineRef.current = isOnline;
         setBackendState(result);
+        if (isOnline && wasOffline) {
+          await loadHierarchy(mode);
+        } else if (!isOnline) {
+          setDataSource('demo');
+          setHierarchyStats(null);
+        }
       }
     };
 
@@ -164,17 +233,21 @@ export function App() {
       isCancelled = true;
       clearInterval(interval);
     };
-  }, []);
+  }, [mode, loadHierarchy]);
 
   // Mode switching resets traversal, modals, and clears active selection
   const handleModeChange = (newMode: HierarchyMode) => {
     setMode(newMode);
     setActiveTraversal(null);
+    setBackendTraversal(null);
     setSelectedNodeId(null);
     setCurrentStepIndex(-1);
     setIsCreateModalOpen(false);
     setIsEditModalOpen(false);
     setIsDeleteModalOpen(false);
+    if (backendState.status === 'success') {
+      loadHierarchy(newMode);
+    }
   };
 
   const handleSelectTraversal = (type: TraversalType) => {
@@ -183,6 +256,7 @@ export function App() {
       setCurrentStepIndex(next ? 0 : -1);
       return next;
     });
+    setBackendTraversal(null);
   };
 
   // Node selection handlers
@@ -195,37 +269,54 @@ export function App() {
   };
 
   // Mutation Handlers: update state, canvas, selection, and traversal results
-  const handleNodeCreated = (request: InsertMemberRequest) => {
-    if (mode === 'org') {
-      setOrgHierarchy(prev => insertMemberIntoHierarchy(prev, request));
+  const handleNodeCreated = async (request: InsertMemberRequest) => {
+    if (backendState.status === 'success') {
+      // Authoritatively reload the hierarchy and stats from C++ engine
+      await loadHierarchy(mode);
     } else {
-      setFamilyHierarchy(prev => insertMemberIntoHierarchy(prev, request));
+      if (mode === 'org') {
+        setOrgHierarchy(prev => insertMemberIntoHierarchy(prev, request));
+      } else {
+        setFamilyHierarchy(prev => insertMemberIntoHierarchy(prev, request));
+      }
     }
   };
 
-  const handleNodeUpdated = (updates: UpdateMemberRequest) => {
-    if (mode === 'org') {
-      setOrgHierarchy(prev => updateMemberInHierarchy(prev, updates));
+  const handleNodeUpdated = async (updates: UpdateMemberRequest) => {
+    if (backendState.status === 'success') {
+      await loadHierarchy(mode);
     } else {
-      setFamilyHierarchy(prev => updateMemberInHierarchy(prev, updates));
+      if (mode === 'org') {
+        setOrgHierarchy(prev => updateMemberInHierarchy(prev, updates));
+      } else {
+        setFamilyHierarchy(prev => updateMemberInHierarchy(prev, updates));
+      }
     }
   };
 
-  const handleNodeDeleted = (deletedId: string) => {
-    const currentHierarchy = mode === 'org' ? orgHierarchy : familyHierarchy;
-    const { updatedHierarchy, deletedNodeIds } = deleteMemberFromHierarchy(
-      currentHierarchy,
-      deletedId
-    );
-
-    if (mode === 'org') {
-      setOrgHierarchy(updatedHierarchy);
+  const handleNodeDeleted = async (deletedId: string) => {
+    if (backendState.status === 'success') {
+      await loadHierarchy(mode);
     } else {
-      setFamilyHierarchy(updatedHierarchy);
+      const currentHierarchy = mode === 'org' ? orgHierarchy : familyHierarchy;
+      const { updatedHierarchy, deletedNodeIds } = deleteMemberFromHierarchy(
+        currentHierarchy,
+        deletedId
+      );
+
+      if (mode === 'org') {
+        setOrgHierarchy(updatedHierarchy);
+      } else {
+        setFamilyHierarchy(updatedHierarchy);
+      }
+
+      // Clean up selection if the deleted node or any of its descendants was selected
+      if (selectedNodeId && deletedNodeIds.includes(selectedNodeId)) {
+        setSelectedNodeId(null);
+      }
     }
 
-    // Clean up selection if the deleted node or any of its descendants was selected
-    if (selectedNodeId && deletedNodeIds.includes(selectedNodeId)) {
+    if (selectedNodeId === deletedId) {
       setSelectedNodeId(null);
     }
   };
@@ -250,13 +341,41 @@ export function App() {
   const selectedNode = activeHierarchy.nodes.find(n => n.id === selectedNodeId) ?? null;
   const effectiveSelectedNodeId = selectedNode?.id ?? null;
 
-  // Derive traversal result directly without cascading effect
-  const traversalResult = useMemo<TraversalResult | null>(() => {
+  // Fetch backend traversal when active traversal changes and backend is online
+  useEffect(() => {
+    if (!activeTraversal || backendState.status !== 'success') {
+      return;
+    }
+
+    let isCancelled = false;
+    getHierarchyTraversal(mode, activeTraversal).then(res => {
+      if (!isCancelled && res.status === 'success' && res.data) {
+        setBackendTraversal(res.data);
+      }
+    });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [mode, activeTraversal, backendState.status, activeHierarchy]);
+
+  // Derive traversal result: backend response prioritized when online, client fallback otherwise
+  const clientTraversal = useMemo<TraversalResult | null>(() => {
     if (!activeTraversal) return null;
     return computeBinaryTraversal(activeHierarchy, activeTraversal);
   }, [activeTraversal, activeHierarchy]);
 
-  const traversalSource = traversalResult ? ('client' as const) : null;
+  const activeBackendTraversal =
+    activeTraversal && backendState.status === 'success' && backendTraversal?.type === activeTraversal
+      ? backendTraversal
+      : null;
+
+  const traversalResult = activeBackendTraversal ?? clientTraversal;
+  const traversalSource: 'backend' | 'client' | null = !activeTraversal
+    ? null
+    : activeBackendTraversal
+    ? 'backend'
+    : 'client';
 
   // Stepper Controls Handlers
   const handleNextStep = () => {
@@ -324,10 +443,25 @@ export function App() {
           </div>
         </header>
 
+        {isHierarchyLoading && (
+          <div className="system-loading-banner" style={{ margin: '0 0 1rem 0', padding: '0.6rem 1rem', background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.3)', borderRadius: '8px', color: '#93c5fd', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#60a5fa' }} />
+            <span>Loading authoritative tree structure from C++ backend...</span>
+          </div>
+        )}
+
+        {hierarchyError && (
+          <div className="system-error-banner" style={{ margin: '0 0 1rem 0', padding: '0.6rem 1rem', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: '8px', color: '#fca5a5', fontSize: '0.85rem' }}>
+            <strong>Backend Notice:</strong> {hierarchyError} (Displaying client demo hierarchy).
+          </div>
+        )}
+
         <QuickInfoBar
           mode={mode}
           activeTraversal={activeTraversal}
           status={backendState.data}
+          dataSource={dataSource}
+          stats={hierarchyStats}
         />
 
         <div className="workspace-grid">
@@ -369,13 +503,13 @@ export function App() {
             />
 
             <div className="system-notes-card">
-              <h3 className="notes-title">Milestone 1 System Architecture</h3>
+              <h3 className="notes-title">System Architecture</h3>
               <ul className="notes-list">
                 <li>
                   <strong>Frontend:</strong> React 19 + TypeScript + Vite with custom SVG tree renderer.
                 </li>
                 <li>
-                  <strong>Backend:</strong> C++14 native WinSock2 HTTP server running on port 8080.
+                  <strong>Backend:</strong> C++14 native WinSock2 HTTP server with complete CRUD and binary traversals.
                 </li>
                 <li>
                   <strong>Representation:</strong> Left-Child Right-Sibling (LCRS) mapping arbitrary hierarchies to binary trees.
