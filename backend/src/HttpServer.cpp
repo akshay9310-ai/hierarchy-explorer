@@ -1,13 +1,15 @@
 #include "HttpServer.hpp"
 #include "Json.hpp"
+#include "FileStorage.hpp"
 #include <fstream>
 #include <set>
-#include <windows.h>
 #include <iostream>
 #include <sstream>
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <cstring>
+#include <cstdint>
 #include <exception>
 #include <unordered_map>
 #include <vector>
@@ -96,22 +98,39 @@ std::string valueOf(const std::unordered_map<std::string, std::string>& values,
     return it == values.end() ? "" : trim(it->second);
 }
 
+std::string getSocketErrorMessage() {
+#ifdef _WIN32
+    return std::to_string(WSAGetLastError());
+#else
+    return std::string(strerror(errno)) + " (errno " + std::to_string(errno) + ")";
+#endif
+}
+
 } // namespace
 
 HttpServer::HttpServer(int p, const std::string& directory)
     : port(p), listenSocket(INVALID_SOCKET), isRunning(false), dataDirectory(directory) {
+#ifdef _WIN32
     WSADATA wsaData;
     int result = WSAStartup(MAKEWORD(2, 2), &wsaData);
     if (result != 0) {
         std::cerr << "[HttpServer] WSAStartup failed: " << result << "\n";
     }
+#endif
+    const char* originEnv = std::getenv("FRONTEND_ORIGIN");
+    if (!originEnv || !*originEnv) {
+        originEnv = std::getenv("ALLOWED_ORIGIN");
+    }
+    if (originEnv && *originEnv) {
+        configuredOrigin = trim(originEnv);
+    }
     initializeFixtures();
     if (!dataDirectory.empty()) {
-        if (!CreateDirectoryA(dataDirectory.c_str(), nullptr) && GetLastError() != ERROR_ALREADY_EXISTS)
+        if (!FileStorage::createDirectory(dataDirectory))
             throw std::runtime_error("Cannot create data directory");
         for (const std::string mode : {"org", "family"}) {
             const std::string file = dataDirectory + "/" + mode + ".json";
-            if (GetFileAttributesA(file.c_str()) == INVALID_FILE_ATTRIBUTES) continue;
+            if (!FileStorage::exists(file)) continue;
             try {
                 std::ifstream input(file, std::ios::binary);
                 if (!input) throw std::runtime_error("Cannot read stored hierarchy");
@@ -138,7 +157,8 @@ bool HttpServer::saveTree(const std::string& mode, const BinaryTree& tree) {
     output.flush();
     if (!output) return false;
     output.close();
-    return MoveFileExA(temporary.c_str(), file.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
+    if (!output) return false;
+    return FileStorage::replaceFile(temporary, file);
 }
 
 void HttpServer::importTree(const std::string& body, const std::string& mode, BinaryTree& tree) {
@@ -200,7 +220,9 @@ void HttpServer::importTree(const std::string& body, const std::string& mode, Bi
 
 HttpServer::~HttpServer() {
     stop();
+#ifdef _WIN32
     WSACleanup();
+#endif
 }
 
 void HttpServer::initializeFixtures() {
@@ -222,37 +244,46 @@ BinaryTree* HttpServer::treeForMode(const std::string& mode) {
 }
 
 bool HttpServer::start() {
+#ifndef _WIN32
+    signal(SIGPIPE, SIG_IGN);
+#endif
+
     listenSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (listenSocket == INVALID_SOCKET) {
-        std::cerr << "[HttpServer] Socket creation failed: " << WSAGetLastError() << "\n";
+        std::cerr << "[HttpServer] Socket creation failed: " << getSocketErrorMessage() << "\n";
         return false;
     }
 
     // Allow quick reuse of address
-    BOOL opt = TRUE;
-    setsockopt(listenSocket, SOL_SOCKET, SO_REUSEADDR, (const char*)&opt, sizeof(opt));
+    int opt = 1;
+#ifdef _WIN32
+    setsockopt(listenSocket, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&opt), sizeof(opt));
+#else
+    setsockopt(listenSocket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+#endif
 
     sockaddr_in serverAddr;
+    std::memset(&serverAddr, 0, sizeof(serverAddr));
     serverAddr.sin_family = AF_INET;
-    serverAddr.sin_addr.s_addr = htonl(INADDR_LOOPBACK); // 127.0.0.1
-    serverAddr.sin_port = htons(static_cast<u_short>(port));
+    serverAddr.sin_addr.s_addr = htonl(INADDR_ANY); // Bind to 0.0.0.0 on all interfaces
+    serverAddr.sin_port = htons(static_cast<uint16_t>(port));
 
-    if (bind(listenSocket, (sockaddr*)&serverAddr, sizeof(serverAddr)) == SOCKET_ERROR) {
-        std::cerr << "[HttpServer] Bind failed on port " << port << ": " << WSAGetLastError() << "\n";
+    if (bind(listenSocket, reinterpret_cast<sockaddr*>(&serverAddr), sizeof(serverAddr)) == SOCKET_ERROR) {
+        std::cerr << "[HttpServer] Bind failed on port " << port << ": " << getSocketErrorMessage() << "\n";
         closesocket(listenSocket);
         listenSocket = INVALID_SOCKET;
         return false;
     }
 
     if (listen(listenSocket, SOMAXCONN) == SOCKET_ERROR) {
-        std::cerr << "[HttpServer] Listen failed: " << WSAGetLastError() << "\n";
+        std::cerr << "[HttpServer] Listen failed: " << getSocketErrorMessage() << "\n";
         closesocket(listenSocket);
         listenSocket = INVALID_SOCKET;
         return false;
     }
 
     isRunning = true;
-    std::cout << "[HttpServer] Listening on http://127.0.0.1:" << port << "\n";
+    std::cout << "[HttpServer] Listening on http://0.0.0.0:" << port << " (bound to all interfaces)\n";
     return true;
 }
 
@@ -264,12 +295,54 @@ void HttpServer::stop() {
     }
 }
 
+bool HttpServer::isOriginAllowed(const std::string& origin) const {
+    if (origin.empty()) return true;
+    if (!configuredOrigin.empty()) {
+        if (configuredOrigin == "*" || configuredOrigin == origin) return true;
+        // Support comma-separated origins if provided
+        size_t start = 0;
+        while (start < configuredOrigin.size()) {
+            size_t comma = configuredOrigin.find(',', start);
+            std::string item = trim(configuredOrigin.substr(start, comma == std::string::npos ? std::string::npos : comma - start));
+            if (item == origin || item == "*") return true;
+            if (comma == std::string::npos) break;
+            start = comma + 1;
+        }
+    }
+    // Automatically allow local development origins
+    if (origin == "http://localhost:5173" || origin == "http://127.0.0.1:5173" ||
+        origin == "http://localhost:3000" || origin == "http://127.0.0.1:3000") {
+        return true;
+    }
+    // Allow Vercel deployment and preview URLs (*.vercel.app)
+    const std::string vercelSuffix = ".vercel.app";
+    if (origin.size() > vercelSuffix.size() &&
+        origin.compare(origin.size() - vercelSuffix.size(), vercelSuffix.size(), vercelSuffix) == 0) {
+        return true;
+    }
+    return configuredOrigin.empty(); // Default open if no specific origin was configured
+}
+
+std::string HttpServer::resolveAllowedOrigin(const std::string& origin) const {
+    if (origin.empty()) {
+        return configuredOrigin.empty() ? "*" : configuredOrigin;
+    }
+    if (isOriginAllowed(origin)) {
+        return origin;
+    }
+    return "";
+}
+
 std::string HttpServer::buildResponse(int statusCode, const std::string& statusText,
                                       const std::string& contentType, const std::string& body,
-                                      bool isOptions) {
+                                      bool isOptions, const std::string& origin) {
     std::ostringstream response;
     response << "HTTP/1.1 " << statusCode << " " << statusText << "\r\n";
-    response << "Access-Control-Allow-Origin: *\r\n";
+    const std::string allowOrigin = resolveAllowedOrigin(origin);
+    if (!allowOrigin.empty()) {
+        response << "Access-Control-Allow-Origin: " << allowOrigin << "\r\n";
+        response << "Vary: Origin\r\n";
+    }
     response << "Access-Control-Allow-Methods: GET, POST, PATCH, PUT, DELETE, OPTIONS\r\n";
     response << "Access-Control-Allow-Headers: Content-Type, Authorization\r\n";
     response << "Connection: close\r\n";
@@ -286,11 +359,11 @@ std::string HttpServer::buildResponse(int statusCode, const std::string& statusT
 
 std::string HttpServer::errorResponse(int statusCode, const std::string& statusText,
                                       const std::string& error, const std::string& message,
-                                      const std::string& path) {
+                                      const std::string& path, const std::string& origin) {
     const std::string body = "{\"error\":\"" + jsonEscape(error) +
         "\",\"message\":\"" + jsonEscape(message) +
         "\",\"path\":\"" + jsonEscape(path) + "\"}";
-    return buildResponse(statusCode, statusText, "application/json; charset=utf-8", body);
+    return buildResponse(statusCode, statusText, "application/json; charset=utf-8", body, false, origin);
 }
 
 std::string HttpServer::hierarchyJson(const std::string& mode, const BinaryTree& tree) const {
@@ -348,17 +421,23 @@ std::string HttpServer::statsJson(const BinaryTree& tree) const {
 }
 
 std::string HttpServer::routeRequest(const std::string& method, const std::string& target,
-                                     const std::string& body) {
+                                     const std::string& body, const std::string& origin) {
     const size_t queryAt = target.find('?');
     const std::string path = target.substr(0, queryAt);
     const std::string query = queryAt == std::string::npos ? "" : target.substr(queryAt + 1);
     const std::unordered_map<std::string, std::string> params = parseQuery(query);
 
-    if (method == "OPTIONS") return buildResponse(204, "No Content", "text/plain", "", true);
+    if (method == "OPTIONS") return buildResponse(204, "No Content", "text/plain", "", true, origin);
     if (method == "GET" && (path == "/api/status" || path == "/api/health")) {
         const std::string json = "{\"status\":\"ok\",\"service\":\"Hierarchy Explorer Backend\","
-            "\"version\":\"2.0.0-m2\",\"compiler\":\"C++14\",\"networking\":\"WinSock2\"}";
-        return buildResponse(200, "OK", "application/json; charset=utf-8", json);
+            "\"version\":\"2.0.0-m2\",\"compiler\":\"C++14\",\"networking\":\""
+#ifdef _WIN32
+            "WinSock2"
+#else
+            "POSIX Sockets"
+#endif
+            "\"}";
+        return buildResponse(200, "OK", "application/json; charset=utf-8", json, false, origin);
     }
 
     const std::string nodePrefix = "/api/hierarchy/nodes/";
@@ -366,15 +445,15 @@ std::string HttpServer::routeRequest(const std::string& method, const std::strin
     const bool knownPath = path == "/api/hierarchy" || path == "/api/hierarchy/member" ||
         path == "/api/hierarchy/traverse" || path == "/api/hierarchy/stats" ||
         path == "/api/hierarchy/search" || path == "/api/hierarchy/export" || path == "/api/hierarchy/import" || nodePath;
-    if (!knownPath) return errorResponse(404, "Not Found", "Not Found", "Endpoint does not exist", path);
+    if (!knownPath) return errorResponse(404, "Not Found", "Not Found", "Endpoint does not exist", path, origin);
 
     const auto modeIt = params.find("mode");
     if (path == "/api/hierarchy/search" || path == "/api/hierarchy/export" || path == "/api/hierarchy/import" || nodePath) {
         const std::string mode = modeIt == params.end() ? "" : modeIt->second;
         BinaryTree* tree = treeForMode(mode);
-        if (!tree) return errorResponse(400, "Bad Request", "Invalid Request", "mode must be org or family", path);
+        if (!tree) return errorResponse(400, "Bad Request", "Invalid Request", "mode must be org or family", path, origin);
         if (method == "GET" && path == "/api/hierarchy/export")
-            return buildResponse(200, "OK", "application/json; charset=utf-8", hierarchyJson(mode, *tree));
+            return buildResponse(200, "OK", "application/json; charset=utf-8", hierarchyJson(mode, *tree), false, origin);
         if (method == "GET" && path == "/api/hierarchy/search") {
             const auto queryIt = params.find("q");
             const std::string term = queryIt == params.end() ? "" : lowerCopy(trim(queryIt->second));
@@ -386,7 +465,7 @@ std::string HttpServer::routeRequest(const std::string& method, const std::strin
                 first = false; json << '"' << jsonEscape(node->id) << '"';
             }
             json << "]}";
-            return buildResponse(200, "OK", "application/json; charset=utf-8", json.str());
+            return buildResponse(200, "OK", "application/json; charset=utf-8", json.str(), false, origin);
         }
         if ((method == "POST" && path == "/api/hierarchy/import") || (nodePath && (method == "PATCH" || method == "DELETE"))) {
             BinaryTree candidate;
@@ -396,7 +475,7 @@ std::string HttpServer::routeRequest(const std::string& method, const std::strin
                     importTree(hierarchyJson(mode, *tree), mode, candidate);
                     const std::string id = urlDecode(path.substr(nodePrefix.size()));
                     TreeNode* node = candidate.find(id);
-                    if (!node) return errorResponse(404, "Not Found", "Not Found", "Member does not exist", path);
+                    if (!node) return errorResponse(404, "Not Found", "Not Found", "Member does not exist", path, origin);
                     if (method == "DELETE") candidate.removeMember(id);
                     else {
                         std::unordered_map<std::string, std::string> values;
@@ -410,39 +489,39 @@ std::string HttpServer::routeRequest(const std::string& method, const std::strin
                         }
                     }
                 }
-            } catch (const std::exception& error) { return errorResponse(400, "Bad Request", "Invalid Request", error.what(), path); }
-            if (!saveTree(mode, candidate)) return errorResponse(500, "Internal Server Error", "Storage Error", "Could not save hierarchy; no changes were applied", path);
+            } catch (const std::exception& error) { return errorResponse(400, "Bad Request", "Invalid Request", error.what(), path, origin); }
+            if (!saveTree(mode, candidate)) return errorResponse(500, "Internal Server Error", "Storage Error", "Could not save hierarchy; no changes were applied", path, origin);
             tree->swap(candidate);
-            return buildResponse(200, "OK", "application/json; charset=utf-8", hierarchyJson(mode, *tree));
+            return buildResponse(200, "OK", "application/json; charset=utf-8", hierarchyJson(mode, *tree), false, origin);
         }
-        return errorResponse(405, "Method Not Allowed", "Method Not Allowed", "Unsupported HTTP method", path);
+        return errorResponse(405, "Method Not Allowed", "Method Not Allowed", "Unsupported HTTP method", path, origin);
     }
     if (method == "GET" && path == "/api/hierarchy") {
         const std::string mode = modeIt == params.end() ? "" : modeIt->second;
         BinaryTree* tree = treeForMode(mode);
-        if (!tree) return errorResponse(400, "Bad Request", "Invalid Request", "mode must be org or family", path);
-        return buildResponse(200, "OK", "application/json; charset=utf-8", hierarchyJson(mode, *tree));
+        if (!tree) return errorResponse(400, "Bad Request", "Invalid Request", "mode must be org or family", path, origin);
+        return buildResponse(200, "OK", "application/json; charset=utf-8", hierarchyJson(mode, *tree), false, origin);
     }
     if (method == "GET" && path == "/api/hierarchy/traverse") {
         const std::string mode = modeIt == params.end() ? "" : modeIt->second;
         const auto typeIt = params.find("type");
         const std::string type = typeIt == params.end() ? "" : typeIt->second;
         BinaryTree* tree = treeForMode(mode);
-        if (!tree) return errorResponse(400, "Bad Request", "Invalid Request", "mode must be org or family", path);
+        if (!tree) return errorResponse(400, "Bad Request", "Invalid Request", "mode must be org or family", path, origin);
         if (type != "preorder" && type != "inorder" && type != "postorder")
-            return errorResponse(400, "Bad Request", "Invalid Request", "type must be preorder, inorder, or postorder", path);
-        return buildResponse(200, "OK", "application/json; charset=utf-8", traversalJson(mode, type, *tree));
+            return errorResponse(400, "Bad Request", "Invalid Request", "type must be preorder, inorder, or postorder", path, origin);
+        return buildResponse(200, "OK", "application/json; charset=utf-8", traversalJson(mode, type, *tree), false, origin);
     }
     if (method == "GET" && path == "/api/hierarchy/stats") {
         const std::string mode = modeIt == params.end() ? "" : modeIt->second;
         BinaryTree* tree = treeForMode(mode);
-        if (!tree) return errorResponse(400, "Bad Request", "Invalid Request", "mode must be org or family", path);
-        return buildResponse(200, "OK", "application/json; charset=utf-8", statsJson(*tree));
+        if (!tree) return errorResponse(400, "Bad Request", "Invalid Request", "mode must be org or family", path, origin);
+        return buildResponse(200, "OK", "application/json; charset=utf-8", statsJson(*tree), false, origin);
     }
     if (method == "POST" && path == "/api/hierarchy/member") {
         std::unordered_map<std::string, std::string> values;
         if (!parseFlatJsonObject(body, values))
-            return errorResponse(400, "Bad Request", "Invalid JSON", "Body must be a flat JSON object with string values", path);
+            return errorResponse(400, "Bad Request", "Invalid JSON", "Body must be a flat JSON object with string values", path, origin);
         const std::string mode = valueOf(values, "mode");
         const std::string id = valueOf(values, "id");
         const std::string name = valueOf(values, "name");
@@ -451,23 +530,23 @@ std::string HttpServer::routeRequest(const std::string& method, const std::strin
         const std::string parentId = valueOf(values, "parentId");
         const std::string relation = valueOf(values, "relation");
         BinaryTree* tree = treeForMode(mode);
-        if (!tree) return errorResponse(400, "Bad Request", "Invalid Request", "mode must be org or family", path);
+        if (!tree) return errorResponse(400, "Bad Request", "Invalid Request", "mode must be org or family", path, origin);
         if (id.empty() || name.empty() || role.empty() || (!tree->isEmpty() && parentId.empty()) || relation.empty())
-            return errorResponse(400, "Bad Request", "Invalid Request", "id, name, role, and relation are required; parentId is required unless the tree is empty", path);
+            return errorResponse(400, "Bad Request", "Invalid Request", "id, name, role, and relation are required; parentId is required unless the tree is empty", path, origin);
         if (relation != "child")
-            return errorResponse(400, "Bad Request", "Invalid Request", "relation must be child", path);
+            return errorResponse(400, "Bad Request", "Invalid Request", "relation must be child", path, origin);
         if (id.size() > 200 || name.size() > 200 || role.size() > 200 || department.size() > 200 || tree->getNodeCount() >= 1000)
-            return errorResponse(400, "Bad Request", "Invalid Request", "Fields are limited to 200 bytes and hierarchies to 1000 members", path);
+            return errorResponse(400, "Bad Request", "Invalid Request", "Fields are limited to 200 bytes and hierarchies to 1000 members", path, origin);
         if (tree->find(id))
-            return errorResponse(409, "Conflict", "Conflict", "A member with this id already exists", path);
+            return errorResponse(409, "Conflict", "Conflict", "A member with this id already exists", path, origin);
         if (!tree->isEmpty() && !tree->find(parentId))
-            return errorResponse(404, "Not Found", "Not Found", "Parent member does not exist", path);
+            return errorResponse(404, "Not Found", "Not Found", "Parent member does not exist", path, origin);
         BinaryTree candidate;
         importTree(hierarchyJson(mode, *tree), mode, candidate);
         const bool inserted = candidate.isEmpty() ? candidate.setRoot(id, name, role, department) : candidate.addChild(parentId, id, name, role, department);
         if (!inserted)
-            return errorResponse(409, "Conflict", "Conflict", "Member could not be inserted", path);
-        if (!saveTree(mode, candidate)) return errorResponse(500, "Internal Server Error", "Storage Error", "Could not save hierarchy; no changes were applied", path);
+            return errorResponse(409, "Conflict", "Conflict", "Member could not be inserted", path, origin);
+        if (!saveTree(mode, candidate)) return errorResponse(500, "Internal Server Error", "Storage Error", "Could not save hierarchy; no changes were applied", path, origin);
         tree->swap(candidate);
         const TreeNode* created = tree->find(id);
         std::ostringstream json;
@@ -478,16 +557,104 @@ std::string HttpServer::routeRequest(const std::string& method, const std::strin
              << "\",\"parentId\":" << (created->parentId.empty() ? "null" : "\"" + jsonEscape(created->parentId) + "\"")
              << ",\"leftChildId\":null,\"rightSiblingId\":null},\"mode\":\""
              << jsonEscape(mode) << "\",\"totalMembers\":" << tree->getNodeCount() << '}';
-        return buildResponse(201, "Created", "application/json; charset=utf-8", json.str());
+        return buildResponse(201, "Created", "application/json; charset=utf-8", json.str(), false, origin);
+    }
+    if (method == "PUT" && path == "/api/hierarchy/member") {
+        std::unordered_map<std::string, std::string> values;
+        if (!parseFlatJsonObject(body, values))
+            return errorResponse(400, "Bad Request", "Invalid JSON", "Body must be a flat JSON object with string values", path, origin);
+        const std::string mode = valueOf(values, "mode");
+        const std::string id = valueOf(values, "id");
+        const std::string name = valueOf(values, "name");
+        const std::string role = valueOf(values, "role");
+        const std::string department = valueOf(values, "department");
+        BinaryTree* tree = treeForMode(mode);
+        if (!tree) return errorResponse(400, "Bad Request", "Invalid Request", "mode must be org or family", path, origin);
+        if (id.empty() || name.empty() || role.empty())
+            return errorResponse(400, "Bad Request", "Invalid Request", "id, name, and role are required", path, origin);
+        if (id.size() > 64 || name.size() > 100 || role.size() > 100 || department.size() > 100)
+            return errorResponse(400, "Bad Request", "Invalid Request", "Input length exceeds allowed maximum", path, origin);
+        BinaryTree candidate;
+        importTree(hierarchyJson(mode, *tree), mode, candidate);
+        const auto res = candidate.updateMember(id, name, role, department);
+        if (res == BinaryTree::UpdateResult::NOT_FOUND)
+            return errorResponse(404, "Not Found", "Not Found", "Member does not exist", path, origin);
+        if (res == BinaryTree::UpdateResult::INVALID_INPUT)
+            return errorResponse(400, "Bad Request", "Invalid Request", "name and role cannot be empty", path, origin);
+
+        if (!saveTree(mode, candidate)) return errorResponse(500, "Internal Server Error", "Storage Error", "Could not save hierarchy; no changes were applied", path, origin);
+        tree->swap(candidate);
+
+        const TreeNode* updated = tree->find(id);
+        std::ostringstream json;
+        json << "{\"member\":{\"id\":\"" << jsonEscape(updated->id)
+             << "\",\"name\":\"" << jsonEscape(updated->name)
+             << "\",\"role\":\"" << jsonEscape(updated->role)
+             << "\",\"department\":\"" << jsonEscape(updated->department)
+             << "\",\"parentId\":";
+        if (updated->parentId.empty()) json << "null"; else json << "\"" << jsonEscape(updated->parentId) << "\"";
+        json << ",\"leftChildId\":";
+        if (updated->left) json << "\"" << jsonEscape(updated->left->id) << "\""; else json << "null";
+        json << ",\"rightSiblingId\":";
+        if (updated->right) json << "\"" << jsonEscape(updated->right->id) << "\""; else json << "null";
+        json << "},\"mode\":\"" << jsonEscape(mode) << "\",\"totalMembers\":" << tree->getNodeCount() << '}';
+        return buildResponse(200, "OK", "application/json; charset=utf-8", json.str(), false, origin);
+    }
+    if (method == "DELETE" && path == "/api/hierarchy/member") {
+        std::string mode, id;
+        const auto modeIt = params.find("mode");
+        const auto idIt = params.find("id");
+        if (modeIt != params.end()) mode = modeIt->second;
+        if (idIt != params.end()) id = idIt->second;
+
+        if ((mode.empty() || id.empty()) && !body.empty()) {
+            std::unordered_map<std::string, std::string> values;
+            if (parseFlatJsonObject(body, values)) {
+                if (mode.empty()) mode = valueOf(values, "mode");
+                if (id.empty()) id = valueOf(values, "id");
+            }
+        }
+
+        BinaryTree* tree = treeForMode(mode);
+        if (!tree) return errorResponse(400, "Bad Request", "Invalid Request", "mode must be org or family", path, origin);
+        if (id.empty())
+            return errorResponse(400, "Bad Request", "Invalid Request", "id is required", path, origin);
+
+        std::vector<std::string> deletedIds;
+        BinaryTree candidate;
+        importTree(hierarchyJson(mode, *tree), mode, candidate);
+        const auto res = candidate.deleteMember(id, deletedIds);
+        if (res == BinaryTree::DeleteResult::NOT_FOUND)
+            return errorResponse(404, "Not Found", "Not Found", "Member does not exist", path, origin);
+        if (res == BinaryTree::DeleteResult::ROOT_NODE)
+            return errorResponse(400, "Bad Request", "Invalid Request", "Root member cannot be deleted", path, origin);
+        if (res == BinaryTree::DeleteResult::FAILED)
+            return errorResponse(500, "Internal Server Error", "Internal Server Error", "Failed to delete member", path, origin);
+
+        if (!saveTree(mode, candidate)) return errorResponse(500, "Internal Server Error", "Storage Error", "Could not save hierarchy; no changes were applied", path, origin);
+        tree->swap(candidate);
+
+        std::ostringstream json;
+        json << "{\"deletedMemberId\":\"" << jsonEscape(id)
+             << "\",\"deletedCount\":" << deletedIds.size()
+             << ",\"deletedNodeIds\":[";
+        for (size_t i = 0; i < deletedIds.size(); ++i) {
+            if (i) json << ',';
+            json << "\"" << jsonEscape(deletedIds[i]) << "\"";
+        }
+        json << "],\"mode\":\"" << jsonEscape(mode) << "\",\"totalMembers\":" << tree->getNodeCount() << '}';
+        return buildResponse(200, "OK", "application/json; charset=utf-8", json.str(), false, origin);
     }
     return errorResponse(405, "Method Not Allowed", "Method Not Allowed",
-                         "HTTP method is not supported for this endpoint", path);
+                         "HTTP method is not supported for this endpoint", path, origin);
 }
 
 void HttpServer::handleClient(SOCKET clientSocket) {
     std::string request;
     char buffer[4096];
     size_t expectedSize = std::string::npos;
+    std::string originHeader;
+
     while (request.size() < 1024 * 1024) {
         const int received = recv(clientSocket, buffer, sizeof(buffer), 0);
         if (received <= 0) break;
@@ -500,8 +667,15 @@ void HttpServer::handleClient(SOCKET clientSocket) {
             std::getline(headers, line);
             while (std::getline(headers, line)) {
                 const size_t colon = line.find(':');
-                if (colon != std::string::npos && lowerCopy(trim(line.substr(0, colon))) == "content-length")
-                    contentLength = static_cast<size_t>(std::strtoul(trim(line.substr(colon + 1)).c_str(), nullptr, 10));
+                if (colon != std::string::npos) {
+                    std::string headerName = lowerCopy(trim(line.substr(0, colon)));
+                    std::string headerValue = trim(line.substr(colon + 1));
+                    if (headerName == "content-length") {
+                        contentLength = static_cast<size_t>(std::strtoul(headerValue.c_str(), nullptr, 10));
+                    } else if (headerName == "origin") {
+                        originHeader = headerValue;
+                    }
+                }
             }
             expectedSize = headerEnd + 4 + contentLength;
         }
@@ -511,23 +685,23 @@ void HttpServer::handleClient(SOCKET clientSocket) {
     const size_t headerEnd = request.find("\r\n\r\n");
     std::string response;
     if (headerEnd == std::string::npos) {
-        response = errorResponse(400, "Bad Request", "Invalid Request", "HTTP headers are incomplete", "");
+        response = errorResponse(400, "Bad Request", "Invalid Request", "HTTP headers are incomplete", "", originHeader);
     } else {
         std::istringstream line(request.substr(0, request.find("\r\n")));
         std::string method, target, version;
         line >> method >> target >> version;
         if (method.empty() || target.empty() || version.compare(0, 5, "HTTP/") != 0)
-            response = errorResponse(400, "Bad Request", "Invalid Request", "Malformed HTTP request line", target);
+            response = errorResponse(400, "Bad Request", "Invalid Request", "Malformed HTTP request line", target, originHeader);
         else {
             try {
-                response = routeRequest(method, target, request.substr(headerEnd + 4));
+                response = routeRequest(method, target, request.substr(headerEnd + 4), originHeader);
             } catch (const std::exception& error) {
                 std::cerr << "[HttpServer] Request failed: " << error.what() << "\n";
                 response = errorResponse(500, "Internal Server Error", "Internal Server Error",
-                                         "The server could not complete the request", target);
+                                         "The server could not complete the request", target, originHeader);
             } catch (...) {
                 response = errorResponse(500, "Internal Server Error", "Internal Server Error",
-                                         "The server could not complete the request", target);
+                                         "The server could not complete the request", target, originHeader);
             }
         }
     }
@@ -555,19 +729,21 @@ void HttpServer::run(int maxRequests) {
         tv.tv_sec = 0;
         tv.tv_usec = 300000; // 300ms timeout check
 
-        int activity = select(0, &readFds, nullptr, nullptr, &tv);
+        int nfds = static_cast<int>(listenSocket) + 1;
+
+        int activity = select(nfds, &readFds, nullptr, nullptr, &tv);
 
         if (activity == SOCKET_ERROR) {
             if (isRunning) {
-                std::cerr << "[HttpServer] Select error: " << WSAGetLastError() << "\n";
+                std::cerr << "[HttpServer] Select error: " << getSocketErrorMessage() << "\n";
             }
             break;
         }
 
         if (activity > 0 && FD_ISSET(listenSocket, &readFds)) {
             sockaddr_in clientAddr;
-            int addrLen = sizeof(clientAddr);
-            SOCKET clientSocket = accept(listenSocket, (sockaddr*)&clientAddr, &addrLen);
+            socklen_t addrLen = sizeof(clientAddr);
+            SOCKET clientSocket = accept(listenSocket, reinterpret_cast<sockaddr*>(&clientAddr), &addrLen);
 
             if (clientSocket != INVALID_SOCKET) {
                 handleClient(clientSocket);

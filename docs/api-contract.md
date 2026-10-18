@@ -86,7 +86,51 @@ Default Base URL: `http://localhost:8080/api`
 
 Only `relation: "child"` is supported. In an empty hierarchy, send `parentId: ""` to create its root. Successful writes are persisted before the response is sent.
 
-### 5. Execute Traversals
+### 5. Update Member
+* **Endpoint:** `PUT /api/hierarchy/member`
+* **Request Body:**
+```json
+{
+  "mode": "org",
+  "id": "node-3",
+  "name": "Alex Mercer",
+  "role": "Principal Architect",
+  "department": "Infrastructure"
+}
+```
+* **Response `200 OK`:**
+```json
+{
+  "member": {
+    "id": "node-3",
+    "name": "Alex Mercer",
+    "role": "Principal Architect",
+    "department": "Infrastructure",
+    "parentId": "node-2",
+    "leftChildId": null,
+    "rightSiblingId": null
+  },
+  "mode": "org",
+  "totalMembers": 3
+}
+```
+Preserves structural parent, child, and sibling relationships while updating node attributes. This compatibility endpoint retains limits of 64 UTF-8 bytes for ID and 100 bytes for name, role, and department. Use PATCH for the newer 200-byte limit. Updates and deletions through these compatibility endpoints are also persisted atomically.
+
+### 6. Delete Member
+* **Endpoint:** `DELETE /api/hierarchy/member?mode=org|family&id=<memberId>` or `DELETE /api/hierarchy/member` with JSON body `{"mode": "org", "id": "<memberId>"}`
+* **Response `200 OK`:**
+```json
+{
+  "deletedMemberId": "node-3",
+  "deletedCount": 1,
+  "deletedNodeIds": ["node-3"],
+  "mode": "org",
+  "totalMembers": 2
+}
+```
+* Note: Deleting a node with subordinates safely cascades to all its descendants, re-wiring parent and sibling pointers to prevent orphaned nodes. Root node deletion is structurally rejected with `400 Bad Request`.
+
+### 7. Execute Traversals
 * **Endpoint:** `GET /api/hierarchy/traverse?mode=org&type=preorder|inorder|postorder`
 * **Response `200 OK`:**
 ```json
@@ -100,7 +144,7 @@ Only `relation: "child"` is supported. In an empty hierarchy, send `parentId: ""
 }
 ```
 
-### 6. Hierarchy Statistics
+### 8. Hierarchy Statistics
 * **Endpoint:** `GET /api/hierarchy/stats?mode=org`
 * **Response `200 OK`:**
 ```json
@@ -113,7 +157,7 @@ Only `relation: "child"` is supported. In an empty hierarchy, send `parentId: ""
 
 ---
 
-### 7. Edit Member
+### 9. Edit Member
 
 `PATCH /api/hierarchy/nodes/:id?mode=org|family`
 
@@ -125,19 +169,19 @@ Send one or more editable fields, for example:
 
 IDs and relationships cannot be changed through this endpoint. Blank names/roles and unknown fields are rejected. An empty department is allowed. Returns the updated full hierarchy with `200 OK`.
 
-### 8. Delete Member and Descendants
+### 10. Delete Member and Descendants
 
 `DELETE /api/hierarchy/nodes/:id?mode=org|family`
 
 Removes the member and their conceptual descendants, preserving the member's next siblings. Deleting the root clears that mode only. Returns the updated hierarchy with `200 OK`; unknown IDs return `404`. URL-encode member IDs in paths.
 
-### 9. Search
+### 11. Search
 
 `GET /api/hierarchy/search?mode=org|family&q=alex`
 
 Returns `{ "ids": ["node-3"] }`. Matches substrings in ID, name, role, and department; ASCII matching is case-insensitive. Empty queries return no results. Results retain binary preorder.
 
-### 10. Import and Export
+### 12. Import and Export
 
 - `GET /api/hierarchy/export?mode=org|family` returns the same JSON shape as hierarchy retrieval.
 - `POST /api/hierarchy/import?mode=org|family` replaces that mode with a hierarchy JSON body and returns the stored hierarchy.
@@ -148,7 +192,7 @@ Files must match the selected mode. Duplicate IDs, missing parents, cycles, disc
 
 ### Persistence
 
-The executable loads `data/org.json` and `data/family.json` relative to its working directory, using fixtures only when a save is absent. Each mutation writes a temporary JSON file and atomically replaces the selected mode's save before updating memory. A failed disk commit returns `500` and leaves memory unchanged. Invalid existing saves are preserved and disable writes; check the backend console and repair or restore the save file before restarting. Contract tests use isolated in-memory servers or a temporary test directory.
+The executable loads `data/org.json` and `data/family.json` relative to its working directory, using fixtures only when a save is absent. Set `DATA_DIR` to use another existing parent directory or a cloud persistent-disk mount. Each mutation writes a temporary JSON file and atomically replaces the selected mode's save before updating memory, using Windows file replacement or POSIX rename. A failed disk commit returns `500` and leaves memory unchanged. Invalid existing saves are preserved and disable writes; check the backend console and repair or restore the save file before restarting. Contract tests use isolated in-memory servers or a temporary test directory.
 
 ## Validation and Errors
 

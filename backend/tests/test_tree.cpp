@@ -212,6 +212,136 @@ void testParentLinkage() {
     std::cout << "[PASS] Parent ID linkage (root, siblings, non-root nested) verified\n";
 }
 
+void testUpdateOperations() {
+    BinaryTree tree;
+    tree.setRoot("ceo", "Sarah Connor", "CEO", "Executive");
+    tree.addChild("ceo", "vp-tech", "John Connor", "VP Tech", "Engineering");
+    tree.addChild("vp-tech", "dev-lead", "Miles Dyson", "Lead Architect", "Engineering");
+
+    // 1. Update leaf node
+    auto res1 = tree.updateMember("dev-lead", "Dr. Miles Dyson", "Distinguished Architect", "R&D");
+    assert(res1 == BinaryTree::UpdateResult::SUCCESS);
+    TreeNode* dev = tree.find("dev-lead");
+    assert(dev != nullptr);
+    assert(dev->name == "Dr. Miles Dyson");
+    assert(dev->role == "Distinguished Architect");
+    assert(dev->department == "R&D");
+    assert(dev->parentId == "vp-tech");
+    assert(dev->left == nullptr);
+    assert(dev->right == nullptr);
+
+    // 2. Update non-leaf node (structural pointers must not change)
+    TreeNode* vp = tree.find("vp-tech");
+    TreeNode* oldLeft = vp->left;
+    TreeNode* oldRight = vp->right;
+    auto res2 = tree.updateMember("vp-tech", "Johnathan Connor", "EVP Tech", "Leadership");
+    assert(res2 == BinaryTree::UpdateResult::SUCCESS);
+    assert(vp->name == "Johnathan Connor");
+    assert(vp->role == "EVP Tech");
+    assert(vp->left == oldLeft);
+    assert(vp->right == oldRight);
+
+    // 3. Update with empty name/role -> INVALID_INPUT
+    auto res3 = tree.updateMember("vp-tech", "", "Role", "Dept");
+    assert(res3 == BinaryTree::UpdateResult::INVALID_INPUT);
+    auto res4 = tree.updateMember("vp-tech", "Name", "", "Dept");
+    assert(res4 == BinaryTree::UpdateResult::INVALID_INPUT);
+
+    // 4. Update non-existent node -> NOT_FOUND
+    auto res5 = tree.updateMember("ghost", "Ghost", "None", "None");
+    assert(res5 == BinaryTree::UpdateResult::NOT_FOUND);
+
+    std::cout << "[PASS] Member updates, field validations, and pointer integrity verified\n";
+}
+
+void testDeleteLeafNode() {
+    BinaryTree tree;
+    tree.setRoot("ceo", "Sarah", "CEO");
+    tree.addChild("ceo", "vp-tech", "John", "VP Tech");
+    tree.addChild("ceo", "vp-ops", "Kyle", "VP Ops");
+    tree.addChild("vp-tech", "dev-lead", "Miles", "Lead Arch");
+
+    assert(tree.getNodeCount() == 4);
+    assert(tree.getHeight() == 3);
+
+    // Delete leaf node dev-lead
+    std::vector<std::string> deleted;
+    auto res = tree.deleteMember("dev-lead", deleted);
+    assert(res == BinaryTree::DeleteResult::SUCCESS);
+    assert(deleted.size() == 1);
+    assert(deleted[0] == "dev-lead");
+
+    assert(tree.getNodeCount() == 3);
+    assert(tree.find("dev-lead") == nullptr);
+    TreeNode* vpTech = tree.find("vp-tech");
+    assert(vpTech != nullptr);
+    assert(vpTech->left == nullptr); // First child rewired to null
+    assert(vpTech->right != nullptr && vpTech->right->id == "vp-ops");
+
+    std::cout << "[PASS] Leaf node deletion and parent pointer rewiring verified\n";
+}
+
+void testDeleteNodeWithChildren() {
+    BinaryTree tree;
+    tree.setRoot("ceo", "Sarah", "CEO");
+    tree.addChild("ceo", "vp-tech", "John", "VP Tech");
+    tree.addChild("ceo", "vp-ops", "Kyle", "VP Ops");
+    tree.addChild("vp-tech", "dev-lead", "Miles", "Lead Arch");
+    tree.addChild("dev-lead", "dev-1", "Tim", "Engineer");
+
+    assert(tree.getNodeCount() == 5);
+
+    // Delete vp-tech (has child dev-lead which has child dev-1, and sibling vp-ops)
+    std::vector<std::string> deleted;
+    auto res = tree.deleteMember("vp-tech", deleted);
+    assert(res == BinaryTree::DeleteResult::SUCCESS);
+    assert(deleted.size() == 3); // vp-tech, dev-lead, dev-1
+    assert(tree.getNodeCount() == 2);
+
+    assert(tree.find("vp-tech") == nullptr);
+    assert(tree.find("dev-lead") == nullptr);
+    assert(tree.find("dev-1") == nullptr);
+
+    TreeNode* root = tree.getRoot();
+    assert(root != nullptr);
+    // ceo->left was rewired to vp-ops (target's right sibling)
+    assert(root->left != nullptr && root->left->id == "vp-ops");
+    TreeNode* vpOps = tree.find("vp-ops");
+    assert(vpOps != nullptr);
+    assert(vpOps->parentId == "ceo");
+
+    // Traversal now contains only ceo and vp-ops
+    auto pre = tree.traversePreorder();
+    assert(pre.size() == 2);
+    assert(pre[0]->id == "ceo");
+    assert(pre[1]->id == "vp-ops");
+
+    std::cout << "[PASS] Subtree cascading deletion and sibling preservation verified\n";
+}
+
+void testDeleteRootAndEdgeCases() {
+    BinaryTree tree;
+    tree.setRoot("ceo", "Sarah", "CEO");
+    tree.addChild("ceo", "vp-tech", "John", "VP Tech");
+
+    // Root deletion must be rejected
+    std::vector<std::string> deleted;
+    auto rootRes = tree.deleteMember("ceo", deleted);
+    assert(rootRes == BinaryTree::DeleteResult::ROOT_NODE);
+    assert(tree.getNodeCount() == 2);
+    assert(tree.getRoot()->id == "ceo");
+
+    // Non-existent ID
+    auto missingRes = tree.deleteMember("ghost", deleted);
+    assert(missingRes == BinaryTree::DeleteResult::NOT_FOUND);
+
+    // Empty ID
+    auto emptyRes = tree.deleteMember("", deleted);
+    assert(emptyRes == BinaryTree::DeleteResult::NOT_FOUND);
+
+    std::cout << "[PASS] Root deletion safety rejection and invalid ID handling verified\n";
+}
+
 int main() {
     std::cout << "=== Running Binary Tree Engine Tests ===\n";
     testEmptyTree();
@@ -219,6 +349,10 @@ int main() {
     testTraversals();
     testParentLinkage();
     testValidationAndClear();
+    testUpdateOperations();
+    testDeleteLeafNode();
+    testDeleteNodeWithChildren();
+    testDeleteRootAndEdgeCases();
     std::cout << "=== All Unit Tests Passed Successfully! ===\n";
     return 0;
 }

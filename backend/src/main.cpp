@@ -1,9 +1,19 @@
 #include "HttpServer.hpp"
 #include <iostream>
 #include <string>
+#include <cstdlib>
 
 int main(int argc, char* argv[]) {
     int port = 8080;
+    const char* portEnv = std::getenv("PORT");
+    if (portEnv && *portEnv) {
+        try {
+            port = std::stoi(portEnv);
+        } catch (...) {
+            std::cerr << "[Warning] Invalid PORT environment variable: " << portEnv << ", defaulting to 8080\n";
+        }
+    }
+
     int maxRequests = -1; // -1 runs indefinitely
 
     for (int i = 1; i < argc; ++i) {
@@ -17,16 +27,17 @@ int main(int argc, char* argv[]) {
 
     std::cout << "=================================================\n";
     std::cout << "   Hierarchy Explorer — C++ Backend Service      \n";
-    std::cout << "   Academic Data Structures Project (Milestone 2)\n";
+    std::cout << "   Academic Data Structures Project (Cloud Ready)\n";
     std::cout << "=================================================\n";
 
-    HttpServer server(port, "data");
+    const char* dataDirectory = std::getenv("DATA_DIR");
+    HttpServer server(port, dataDirectory && *dataDirectory ? dataDirectory : "data");
     if (!server.start()) {
-        std::cerr << "Failed to start HTTP server on port " << port << ".\n";
+        std::cerr << "[Error] Failed to start HTTP server on port " << port << ".\n";
         return 1;
     }
 
-    std::cout << "Server active on http://localhost:" << port << "/api/status\n";
+    std::cout << "Server active on port " << port << " (Health check: /api/status)\n";
     std::cout << "Press Ctrl+C to terminate.\n";
 
     server.run(maxRequests);

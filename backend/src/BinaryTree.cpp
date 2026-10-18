@@ -100,6 +100,77 @@ bool BinaryTree::addChild(const std::string& parentId, const std::string& id, co
     return true;
 }
 
+BinaryTree::UpdateResult BinaryTree::updateMember(const std::string& id,
+                                                  const std::string& name,
+                                                  const std::string& role,
+                                                  const std::string& dept) {
+    if (id.empty() || name.empty() || role.empty()) {
+        return UpdateResult::INVALID_INPUT;
+    }
+
+    TreeNode* node = find(id);
+    if (!node) {
+        return UpdateResult::NOT_FOUND;
+    }
+
+    node->name = name;
+    node->role = role;
+    node->department = dept;
+    return UpdateResult::SUCCESS;
+}
+
+void BinaryTree::destroySubtreeAndUnregister(TreeNode* node, std::vector<std::string>& deletedIds) {
+    if (!node) return;
+    destroySubtreeAndUnregister(node->left, deletedIds);
+    destroySubtreeAndUnregister(node->right, deletedIds);
+    deletedIds.push_back(node->id);
+    nodeRegistry.erase(node->id);
+    delete node;
+}
+
+BinaryTree::DeleteResult BinaryTree::deleteMember(const std::string& id, std::vector<std::string>& deletedIds) {
+    deletedIds.clear();
+    if (id.empty()) {
+        return DeleteResult::NOT_FOUND;
+    }
+
+    TreeNode* target = find(id);
+    if (!target) {
+        return DeleteResult::NOT_FOUND;
+    }
+
+    // Structurally unsafe: Reject deleting root node
+    if (target == root || target->parentId.empty()) {
+        return DeleteResult::ROOT_NODE;
+    }
+
+    TreeNode* parent = find(target->parentId);
+    if (!parent) {
+        return DeleteResult::FAILED;
+    }
+
+    // Rewire LCRS pointers to remove target from its sibling chain
+    if (parent->left == target) {
+        parent->left = target->right;
+    } else {
+        TreeNode* prev = parent->left;
+        while (prev && prev->right != target) {
+            prev = prev->right;
+        }
+        if (!prev) {
+            return DeleteResult::FAILED;
+        }
+        prev->right = target->right;
+    }
+
+    // Detach target from remaining siblings before deleting target and its descendants
+    target->right = nullptr;
+
+    destroySubtreeAndUnregister(target, deletedIds);
+
+    return DeleteResult::SUCCESS;
+}
+
 int BinaryTree::calculateHeight(const TreeNode* node) const {
     if (!node) return 0;
     return 1 + std::max(calculateHeight(node->left), calculateHeight(node->right));

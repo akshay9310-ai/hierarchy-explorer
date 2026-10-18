@@ -2,16 +2,33 @@
 #define HTTP_SERVER_HPP
 
 #include <string>
-#include <winsock2.h>
-#include <ws2tcpip.h>
 #include "BinaryTree.hpp"
 
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+typedef int socklen_t;
+#else
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <errno.h>
+#include <cstring>
+#include <signal.h>
+typedef int SOCKET;
+#define INVALID_SOCKET (-1)
+#define SOCKET_ERROR   (-1)
+#define closesocket(s) close(s)
+#endif
+
 /**
- * @brief Minimal, single-threaded HTTP REST Server proof-of-concept
- * using native Windows Sockets 2.
+ * @brief Cross-platform, single-threaded HTTP REST Server
+ * supporting Windows Winsock2 and Linux POSIX sockets.
  *
- * Specifically designed to run cleanly on MinGW.org GCC 6.3 (win32 thread model)
- * without requiring std::thread or external networking libraries.
+ * Runs cleanly on MinGW Windows development environments and
+ * cloud container environments (e.g. Render Docker with Linux).
  */
 class HttpServer {
 public:
@@ -24,7 +41,7 @@ public:
 
     // Lifecycle
     bool start();
-    void run(int maxRequests = -1); // -1 runs indefinitely; positive integer runs N requests (ideal for tests)
+    void run(int maxRequests = -1); // -1 runs indefinitely; positive integer runs N requests
     void stop();
 
     int getPort() const { return port; }
@@ -32,12 +49,13 @@ public:
     // Routes a parsed request and returns a complete HTTP response.
     // Public to support deterministic API contract tests without opening a socket.
     std::string routeRequest(const std::string& method, const std::string& target,
-                             const std::string& body = "");
+                             const std::string& body = "", const std::string& origin = "");
 
 private:
     int port;
     SOCKET listenSocket;
     bool isRunning;
+    std::string configuredOrigin;
     BinaryTree orgTree;
     BinaryTree familyTree;
     std::string dataDirectory;
@@ -54,10 +72,12 @@ private:
     std::string statsJson(const BinaryTree& tree) const;
     std::string errorResponse(int statusCode, const std::string& statusText,
                               const std::string& error, const std::string& message,
-                              const std::string& path);
+                              const std::string& path, const std::string& origin = "");
     std::string buildResponse(int statusCode, const std::string& statusText,
                               const std::string& contentType, const std::string& body,
-                              bool isOptions = false);
+                              bool isOptions = false, const std::string& origin = "");
+    bool isOriginAllowed(const std::string& origin) const;
+    std::string resolveAllowedOrigin(const std::string& origin) const;
 };
 
 #endif // HTTP_SERVER_HPP

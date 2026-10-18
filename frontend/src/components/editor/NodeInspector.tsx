@@ -6,6 +6,9 @@ export interface NodeInspectorProps {
   allNodes: TreeNodeDto[];
   onSelectNode: (nodeId: string) => void;
   onClearSelection: () => void;
+  onOpenCreateModal?: () => void;
+  onOpenEditModal?: () => void;
+  onOpenDeleteModal?: () => void;
 }
 
 export const NodeInspector: React.FC<NodeInspectorProps> = ({
@@ -13,6 +16,9 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
   allNodes,
   onSelectNode,
   onClearSelection,
+  onOpenCreateModal,
+  onOpenEditModal,
+  onOpenDeleteModal,
 }) => {
   if (!selectedNode) {
     return (
@@ -25,6 +31,16 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
           <p className="inspector-empty-text">
             Click any node on the hierarchy canvas or use <kbd>Tab</kbd> + <kbd>Enter</kbd> to inspect its details and Left-Child Right-Sibling binary pointers.
           </p>
+          {onOpenCreateModal && (
+            <button
+              type="button"
+              className="inspector-action-btn primary full-width"
+              onClick={onOpenCreateModal}
+              title="Add a new member to the hierarchy"
+            >
+              + Add New Member
+            </button>
+          )}
         </div>
       </div>
     );
@@ -79,6 +95,40 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
             <span className="inspector-dept-badge">{selectedNode.department}</span>
           )}
         </div>
+      </div>
+
+      {/* Node Editing Actions Bar */}
+      <div className="inspector-actions-row">
+        {onOpenEditModal && (
+          <button
+            type="button"
+            className="inspector-action-btn edit-btn"
+            onClick={onOpenEditModal}
+            title="Edit member name, role, or department via live C++ backend API"
+          >
+            ✎ Edit Member
+          </button>
+        )}
+        {onOpenCreateModal && (
+          <button
+            type="button"
+            className="inspector-action-btn add-btn"
+            onClick={onOpenCreateModal}
+            title="Add a subordinate child to this node via live C++ backend API"
+          >
+            + Add Child
+          </button>
+        )}
+        {onOpenDeleteModal && (
+          <button
+            type="button"
+            className="inspector-action-btn delete-btn"
+            onClick={onOpenDeleteModal}
+            title="Delete this member and inspect subordinate impact via live C++ backend API"
+          >
+            🗑 Delete Member
+          </button>
+        )}
       </div>
 
       <div className="inspector-prop-list">
