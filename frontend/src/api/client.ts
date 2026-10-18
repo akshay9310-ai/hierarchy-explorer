@@ -1,4 +1,18 @@
-import type { ApiErrorPayload, ApiState, BackendStatus } from './types';
+import type {
+  ApiErrorPayload,
+  ApiState,
+  BackendStatus,
+  HierarchyData,
+  HierarchyMode,
+  HierarchyStats,
+  InsertMemberRequest,
+  InsertMemberResponse,
+  UpdateMemberRequest,
+  UpdateMemberResponse,
+  DeleteMemberResponse,
+  TraversalResult,
+  TraversalType,
+} from './types';
 
 // Centralized relative base path per Vite proxy configuration
 const API_BASE = '/api';
@@ -158,3 +172,190 @@ export async function checkBackendStatus(): Promise<BackendStatus | null> {
   const result = await getBackendStatus();
   return result.data;
 }
+
+/**
+ * Retrieves the full hierarchy tree data for the specified mode from the C++ backend
+ * per docs/api-contract.md (GET /api/hierarchy?mode=org|family).
+ */
+export async function getHierarchy(mode: HierarchyMode): Promise<ApiState<HierarchyData>> {
+  try {
+    const data = await requestJson<HierarchyData>(`/hierarchy?mode=${encodeURIComponent(mode)}`);
+    return {
+      status: 'success',
+      data,
+      error: null,
+      statusCode: 200,
+    };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to retrieve hierarchy';
+    const statusCode = err instanceof ApiError ? err.statusCode : null;
+    return {
+      status: 'error',
+      data: null,
+      error: message,
+      statusCode,
+    };
+  }
+}
+
+/**
+ * Executes a binary tree traversal (preorder, inorder, postorder) on the C++ backend
+ * per docs/api-contract.md (GET /api/hierarchy/traverse?mode=org&type=preorder).
+ */
+export async function getHierarchyTraversal(
+  mode: HierarchyMode,
+  type: TraversalType
+): Promise<ApiState<TraversalResult>> {
+  try {
+    const data = await requestJson<TraversalResult>(
+      `/hierarchy/traverse?mode=${encodeURIComponent(mode)}&type=${encodeURIComponent(type)}`
+    );
+    return {
+      status: 'success',
+      data,
+      error: null,
+      statusCode: 200,
+    };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to retrieve traversal';
+    const statusCode = err instanceof ApiError ? err.statusCode : null;
+    return {
+      status: 'error',
+      data: null,
+      error: message,
+      statusCode,
+    };
+  }
+}
+
+/**
+ * Retrieves aggregate hierarchy statistics and LCRS binary tree height from the C++ backend
+ * per docs/api-contract.md (GET /api/hierarchy/stats?mode=org|family).
+ */
+export async function getHierarchyStats(mode: HierarchyMode): Promise<ApiState<HierarchyStats>> {
+  try {
+    const data = await requestJson<HierarchyStats>(`/hierarchy/stats?mode=${encodeURIComponent(mode)}`);
+    return {
+      status: 'success',
+      data,
+      error: null,
+      statusCode: 200,
+    };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to retrieve stats';
+    const statusCode = err instanceof ApiError ? err.statusCode : null;
+    return {
+      status: 'error',
+      data: null,
+      error: message,
+      statusCode,
+    };
+  }
+}
+
+/**
+ * Submits member creation to the C++ backend per docs/api-contract.md (POST /api/hierarchy/member).
+ * Correctly parses the wrapper response: { member, mode, totalMembers }.
+ */
+export async function createBackendMember(
+  request: InsertMemberRequest
+): Promise<ApiState<InsertMemberResponse>> {
+  try {
+    const data = await requestJson<InsertMemberResponse>('/hierarchy/member', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request),
+    });
+
+    return {
+      status: 'success',
+      data,
+      error: null,
+      statusCode: 201,
+    };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to create member';
+    const statusCode = err instanceof ApiError ? err.statusCode : null;
+
+    return {
+      status: 'error',
+      data: null,
+      error: message,
+      statusCode,
+    };
+  }
+}
+
+/**
+ * Submits member updates to the C++ backend per docs/api-contract.md (PUT /api/hierarchy/member).
+ * Parses the wrapper response: { member, mode, totalMembers }.
+ */
+export async function updateBackendMember(
+  request: UpdateMemberRequest
+): Promise<ApiState<UpdateMemberResponse>> {
+  try {
+    const data = await requestJson<UpdateMemberResponse>('/hierarchy/member', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request),
+    });
+
+    return {
+      status: 'success',
+      data,
+      error: null,
+      statusCode: 200,
+    };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to update member';
+    const statusCode = err instanceof ApiError ? err.statusCode : null;
+
+    return {
+      status: 'error',
+      data: null,
+      error: message,
+      statusCode,
+    };
+  }
+}
+
+/**
+ * Submits member deletion to the C++ backend per docs/api-contract.md (DELETE /api/hierarchy/member).
+ * Safely cascades to all subordinates and rewires LCRS sibling pointers.
+ * Parses response: { deletedMemberId, deletedCount, deletedNodeIds, mode, totalMembers }.
+ */
+export async function deleteBackendMember(
+  mode: HierarchyMode,
+  id: string
+): Promise<ApiState<DeleteMemberResponse>> {
+  try {
+    const data = await requestJson<DeleteMemberResponse>(
+      `/hierarchy/member?mode=${encodeURIComponent(mode)}&id=${encodeURIComponent(id)}`,
+      {
+        method: 'DELETE',
+      }
+    );
+
+    return {
+      status: 'success',
+      data,
+      error: null,
+      statusCode: 200,
+    };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to delete member';
+    const statusCode = err instanceof ApiError ? err.statusCode : null;
+
+    return {
+      status: 'error',
+      data: null,
+      error: message,
+      statusCode,
+    };
+  }
+}
+

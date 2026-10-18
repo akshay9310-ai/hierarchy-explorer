@@ -86,7 +86,51 @@ Default Base URL: `http://localhost:8080/api`
 
 Only `relation: "child"` is supported. Data is stored in memory and resets when the server restarts.
 
-### 5. Execute Traversals
+### 5. Update Member
+* **Endpoint:** `PUT /api/hierarchy/member`
+* **Request Body:**
+```json
+{
+  "mode": "org",
+  "id": "node-3",
+  "name": "Alex Mercer",
+  "role": "Principal Architect",
+  "department": "Infrastructure"
+}
+```
+* **Response `200 OK`:**
+```json
+{
+  "member": {
+    "id": "node-3",
+    "name": "Alex Mercer",
+    "role": "Principal Architect",
+    "department": "Infrastructure",
+    "parentId": "node-2",
+    "leftChildId": null,
+    "rightSiblingId": null
+  },
+  "mode": "org",
+  "totalMembers": 3
+}
+```
+Preserves structural parent, child, and sibling relationships while updating node attributes.
+
+### 6. Delete Member
+* **Endpoint:** `DELETE /api/hierarchy/member?mode=org|family&id=<memberId>` or `DELETE /api/hierarchy/member` with JSON body `{"mode": "org", "id": "<memberId>"}`
+* **Response `200 OK`:**
+```json
+{
+  "deletedMemberId": "node-3",
+  "deletedCount": 1,
+  "deletedNodeIds": ["node-3"],
+  "mode": "org",
+  "totalMembers": 2
+}
+```
+* Note: Deleting a node with subordinates safely cascades to all its descendants, re-wiring parent and sibling pointers to prevent orphaned nodes. Root node deletion is structurally rejected with `400 Bad Request`.
+
+### 7. Execute Traversals
 * **Endpoint:** `GET /api/hierarchy/traverse?mode=org&type=preorder|inorder|postorder`
 * **Response `200 OK`:**
 ```json
@@ -100,7 +144,7 @@ Only `relation: "child"` is supported. Data is stored in memory and resets when 
 }
 ```
 
-### 6. Hierarchy Statistics
+### 8. Hierarchy Statistics
 * **Endpoint:** `GET /api/hierarchy/stats?mode=org`
 * **Response `200 OK`:**
 ```json

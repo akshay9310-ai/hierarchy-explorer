@@ -70,6 +70,95 @@ void testErrors() {
     std::cout << "[PASS] API validation and error responses verified\n";
 }
 
+void testUpdateEndpoint() {
+    HttpServer server(0);
+
+    // 1. Valid update in org mode
+    const std::string orgUpdate = "{\"mode\":\"org\",\"id\":\"org-lead-arch\","
+        "\"name\":\"Dr. Miles Dyson\",\"role\":\"Chief Architect\",\"department\":\"Platforms\"}";
+    const std::string orgRes = server.routeRequest("PUT", "/api/hierarchy/member", orgUpdate);
+    expectContains(orgRes, "HTTP/1.1 200 OK");
+    expectContains(orgRes, "\"name\":\"Dr. Miles Dyson\"");
+    expectContains(orgRes, "\"role\":\"Chief Architect\"");
+    expectContains(orgRes, "\"department\":\"Platforms\"");
+    expectContains(orgRes, "\"totalMembers\":4");
+
+    // Verify persistence in GET /api/hierarchy?mode=org
+    const std::string getOrg = server.routeRequest("GET", "/api/hierarchy?mode=org");
+    expectContains(getOrg, "Dr. Miles Dyson");
+    expectContains(getOrg, "Chief Architect");
+
+    // 2. Valid update in family mode
+    const std::string famUpdate = "{\"mode\":\"family\",\"id\":\"fam-grandchild\","
+        "\"name\":\"Sir Lancelot du Lac\",\"role\":\"First Knight\",\"department\":\"Champions\"}";
+    const std::string famRes = server.routeRequest("PUT", "/api/hierarchy/member", famUpdate);
+    expectContains(famRes, "HTTP/1.1 200 OK");
+    expectContains(famRes, "\"name\":\"Sir Lancelot du Lac\"");
+
+    // 3. Validation errors: missing required fields
+    const std::string missingField = "{\"mode\":\"org\",\"id\":\"org-ceo\",\"name\":\"\",\"role\":\"\"}";
+    expectContains(server.routeRequest("PUT", "/api/hierarchy/member", missingField), "HTTP/1.1 400 Bad Request");
+
+    // 4. Validation errors: invalid mode
+    const std::string invalidMode = "{\"mode\":\"invalid\",\"id\":\"org-ceo\",\"name\":\"Sarah\",\"role\":\"CEO\"}";
+    expectContains(server.routeRequest("PUT", "/api/hierarchy/member", invalidMode), "HTTP/1.1 400 Bad Request");
+
+    // 5. Member not found
+    const std::string notFound = "{\"mode\":\"org\",\"id\":\"ghost\",\"name\":\"Ghost\",\"role\":\"None\"}";
+    expectContains(server.routeRequest("PUT", "/api/hierarchy/member", notFound), "HTTP/1.1 404 Not Found");
+
+    // 6. Exceeding max length
+    const std::string tooLong(120, 'x');
+    const std::string lengthExceeded = "{\"mode\":\"org\",\"id\":\"org-ceo\",\"name\":\"" + tooLong + "\",\"role\":\"CEO\"}";
+    expectContains(server.routeRequest("PUT", "/api/hierarchy/member", lengthExceeded), "HTTP/1.1 400 Bad Request");
+
+    std::cout << "[PASS] PUT /api/hierarchy/member contract, validation, and mode updates verified\n";
+}
+
+void testDeleteEndpoint() {
+    HttpServer server(0);
+
+    // 1. Delete leaf node via query parameters
+    const std::string delLeaf = server.routeRequest("DELETE", "/api/hierarchy/member?mode=org&id=org-lead-arch");
+    expectContains(delLeaf, "HTTP/1.1 200 OK");
+    expectContains(delLeaf, "\"deletedMemberId\":\"org-lead-arch\"");
+    expectContains(delLeaf, "\"deletedCount\":1");
+    expectContains(delLeaf, "\"totalMembers\":3");
+    // Verify removal in GET
+    assert(server.routeRequest("GET", "/api/hierarchy?mode=org").find("org-lead-arch") == std::string::npos);
+
+    // 2. Delete node with children via JSON body (family mode: fam-first-child has child fam-grandchild)
+    const std::string delBranchBody = "{\"mode\":\"family\",\"id\":\"fam-first-child\"}";
+    const std::string delBranch = server.routeRequest("DELETE", "/api/hierarchy/member", delBranchBody);
+    expectContains(delBranch, "HTTP/1.1 200 OK");
+    expectContains(delBranch, "\"deletedMemberId\":\"fam-first-child\"");
+    expectContains(delBranch, "\"deletedCount\":2");
+    expectContains(delBranch, "\"totalMembers\":2");
+
+    // Verify that both fam-first-child and fam-grandchild are removed, but fam-patriarch and fam-sibling remain
+    const std::string getFam = server.routeRequest("GET", "/api/hierarchy?mode=family");
+    assert(getFam.find("fam-first-child") == std::string::npos);
+    assert(getFam.find("fam-grandchild") == std::string::npos);
+    expectContains(getFam, "fam-patriarch");
+    expectContains(getFam, "fam-sibling");
+
+    // 3. Reject root deletion
+    const std::string delRoot = server.routeRequest("DELETE", "/api/hierarchy/member?mode=org&id=org-ceo");
+    expectContains(delRoot, "HTTP/1.1 400 Bad Request");
+    expectContains(delRoot, "Root member cannot be deleted");
+    expectContains(server.routeRequest("GET", "/api/hierarchy?mode=org"), "org-ceo");
+
+    // 4. Delete non-existent member -> 404
+    const std::string delMissing = server.routeRequest("DELETE", "/api/hierarchy/member?mode=org&id=ghost");
+    expectContains(delMissing, "HTTP/1.1 404 Not Found");
+
+    // 5. Delete with invalid mode -> 400
+    const std::string delBadMode = server.routeRequest("DELETE", "/api/hierarchy/member?mode=wrong&id=org-ceo");
+    expectContains(delBadMode, "HTTP/1.1 400 Bad Request");
+
+    std::cout << "[PASS] DELETE /api/hierarchy/member leaf, branch, root rejection, and query/body handling verified\n";
+}
+
 } // namespace
 
 int main() {
@@ -77,6 +166,8 @@ int main() {
     testReadEndpoints();
     testInsertionAndIsolation();
     testErrors();
+    testUpdateEndpoint();
+    testDeleteEndpoint();
     std::cout << "=== All API Tests Passed Successfully! ===\n";
     return 0;
 }

@@ -150,7 +150,7 @@ export const TraversalControls: React.FC<TraversalControlsProps> = ({
 
           {/* Active Node Announcement */}
           {currentStep && (
-            <div className="current-step-callout">
+            <div className="current-step-callout" aria-live="polite" aria-atomic="true">
               <span className="current-step-badge">#{currentStep.step}</span>
               <div className="current-step-info">
                 <span className="current-step-name">{currentStep.name}</span>

@@ -1,27 +1,33 @@
 import React from 'react';
-import type { HierarchyMode, TraversalType, BackendStatus } from '../../api/types';
+import type { HierarchyMode, TraversalType, BackendStatus, HierarchyStats } from '../../api/types';
 
 interface QuickInfoBarProps {
   mode: HierarchyMode;
   activeTraversal: TraversalType | null;
   status: BackendStatus | null;
+  dataSource?: 'backend' | 'demo';
+  stats?: HierarchyStats | null;
 }
 
 export const QuickInfoBar: React.FC<QuickInfoBarProps> = ({
   mode,
   activeTraversal,
   status,
+  dataSource = 'demo',
+  stats,
 }) => {
   return (
-    <div className="quick-info-bar">
+    <div className="quick-info-bar" role="region" aria-label="Hierarchy summary statistics">
       <div className="info-stat">
         <span className="stat-label">Active Mode</span>
         <span className="stat-value">{mode === 'org' ? '🏢 Organization' : '🌳 Family'}</span>
       </div>
 
       <div className="info-stat">
-        <span className="stat-label">Data Structure</span>
-        <span className="stat-value">Binary Tree (LCRS)</span>
+        <span className="stat-label">Data Source</span>
+        <span className="stat-value">
+          {dataSource === 'backend' ? '🟢 C++ Backend (Live API)' : '🟡 Local Demo (Offline)'}
+        </span>
       </div>
 
       <div className="info-stat">
@@ -32,11 +38,16 @@ export const QuickInfoBar: React.FC<QuickInfoBarProps> = ({
       </div>
 
       <div className="info-stat">
-        <span className="stat-label">Backend Engine</span>
+        <span className="stat-label">C++ Engine & Stats</span>
         <span className="stat-value">
-          {status ? `${status.compiler}` : 'WinSock2 Server (Localhost:8080)'}
+          {stats
+            ? `Height: ${stats.binaryTreeHeight} | Members: ${stats.totalMembers}`
+            : status
+            ? `${status.compiler} (WinSock2)`
+            : 'WinSock2 Server (Port 8080)'}
         </span>
       </div>
     </div>
   );
 };
+
