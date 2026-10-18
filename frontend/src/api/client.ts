@@ -14,8 +14,21 @@ import type {
   TraversalType,
 } from './types';
 
-// Centralized relative base path per Vite proxy configuration
-const API_BASE = '/api';
+/**
+ * Centralized API base URL resolver.
+ * Defaults to '/api' in local development to route through the Vite proxy (localhost:8080).
+ * In production (e.g. deployed on Vercel), uses VITE_API_BASE_URL (pointing to Render C++ backend).
+ */
+function resolveApiBaseUrl(): string {
+  const envUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim();
+  if (!envUrl) {
+    return '/api';
+  }
+  const clean = envUrl.replace(/\/+$/, '');
+  return clean.endsWith('/api') ? clean : `${clean}/api`;
+}
+
+const API_BASE = resolveApiBaseUrl();
 const DEFAULT_TIMEOUT_MS = 2500;
 
 /**
