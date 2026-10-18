@@ -79,16 +79,36 @@ npm run dev
 
 ---
 
-## 5. Current Implementation Limitations (Milestone 2)
+## 5. API Integration and Persistence
+
+The frontend loads both hierarchy data and statistics from the API. Select a node to add children, edit its details, or delete its descendant branch. Search matches names, roles, departments, and IDs and highlights matching nodes. Export creates a JSON backup; Import replaces the selected mode after confirmation and server validation.
+
+Preorder, inorder, and postorder sequences come from the C++ API. Use Play/Pause, speed selection, Previous/Next, and Reset to follow the sequence on the canvas. Mutations refresh hierarchy data, statistics, and any active traversal. Loading failures show a retry action rather than demo data.
+
+Changes persist in `backend/data/org.json` and `backend/data/family.json` when the server is launched from `backend/`. Keep these files to retain your data between runs. They are excluded from Git. Deletion is permanent unless you have an exported backup; sibling branches are preserved. Deleting the root allows creating a new root through the member form.
+
+### Windows toolchain shortcut
+
+If MinGW is installed under `C:\msys64\ucrt64\bin` but is not on PATH, use:
+
+```powershell
+$env:Path = 'C:\msys64\ucrt64\bin;' + $env:Path
+mingw32-make server
+.\hierarchy_server.exe
+```
+
+In the frontend terminal use `npm.cmd run dev` if PowerShell blocks `npm.ps1`.
+
+## 6. Current Implementation Limitations
 
 * **Toolchain Constraints:** MinGW.org GCC 6.3 uses the `win32` thread model, which does not provide `std::thread`. To ensure 100% build compatibility without altering the host environment, the backend uses a native single-threaded WinSock2 event loop with `select()`.
 * **JSON Serialization:** Milestone 2 uses lightweight, safely escaped JSON responses without pulling in heavy external JSON libraries.
-* **Persistence:** Organization and family fixtures plus inserted members are held in memory and reset when the backend restarts.
-* **Scope:** Milestone 2 exposes hierarchy retrieval, child insertion, C++ traversal, and statistics APIs. Update/delete operations and durable persistence remain future work.
+* **Persistence:** Local JSON snapshots support a single server process; concurrent writers and database transactions are outside the current scope.
+* **Scope:** Editing covers member details. Moving branches and undo history are not implemented. Hierarchies are limited to 1000 members; member text fields allow up to 200 UTF-8 bytes.
 
 ---
 
-## 6. Project Documentation
+## 7. Project Documentation
 
 * [System Architecture](docs/architecture.md)
 * [REST API Contract](docs/api-contract.md)

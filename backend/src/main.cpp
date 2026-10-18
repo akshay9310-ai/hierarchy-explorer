@@ -20,7 +20,7 @@ int main(int argc, char* argv[]) {
     std::cout << "   Academic Data Structures Project (Milestone 2)\n";
     std::cout << "=================================================\n";
 
-    HttpServer server(port);
+    HttpServer server(port, "data");
     if (!server.start()) {
         std::cerr << "Failed to start HTTP server on port " << port << ".\n";
         return 1;

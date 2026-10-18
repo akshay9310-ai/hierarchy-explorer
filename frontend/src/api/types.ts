@@ -2,6 +2,12 @@ export type HierarchyMode = 'org' | 'family';
 
 export type TraversalType = 'preorder' | 'inorder' | 'postorder';
 
+export interface HierarchyStats {
+  totalMembers: number;
+  binaryTreeHeight: number;
+  rootId: string | null;
+}
+
 /**
  * Health & Backend Status Response per docs/api-contract.md (GET /api/status)
  */

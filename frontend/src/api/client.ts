@@ -1,4 +1,14 @@
-import type { ApiErrorPayload, ApiState, BackendStatus } from './types';
+import type { ApiErrorPayload, ApiState, BackendStatus, HierarchyData, HierarchyMode, HierarchyStats, TraversalResult, TraversalType } from './types';
+
+export const getHierarchy = (mode: HierarchyMode) => requestJson<HierarchyData>(`/hierarchy?mode=${mode}`);
+export const getStats = (mode: HierarchyMode) => requestJson<HierarchyStats>(`/hierarchy/stats?mode=${mode}`);
+export const getTraversal = (mode: HierarchyMode, type: TraversalType) => requestJson<TraversalResult>(`/hierarchy/traverse?mode=${mode}&type=${type}`);
+export const searchMembers = (mode: HierarchyMode, query: string) => requestJson<{ ids: string[] }>(`/hierarchy/search?mode=${mode}&q=${encodeURIComponent(query)}`);
+export const exportHierarchy = (mode: HierarchyMode) => requestJson<HierarchyData>(`/hierarchy/export?mode=${mode}`);
+export const importHierarchy = (mode: HierarchyMode, body: string) => requestJson<HierarchyData>(`/hierarchy/import?mode=${mode}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, timeoutMs: 10000 });
+export const addMember = (mode: HierarchyMode, member: { id: string; name: string; role: string; department: string; parentId: string }) => requestJson('/hierarchy/member', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...member, mode, relation: 'child' }) });
+export const editMember = (mode: HierarchyMode, id: string, fields: { name: string; role: string; department: string }) => requestJson<HierarchyData>(`/hierarchy/nodes/${encodeURIComponent(id)}?mode=${mode}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(fields) });
+export const deleteMember = (mode: HierarchyMode, id: string) => requestJson<HierarchyData>(`/hierarchy/nodes/${encodeURIComponent(id)}?mode=${mode}`, { method: 'DELETE' });
 
 // Centralized relative base path per Vite proxy configuration
 const API_BASE = '/api';

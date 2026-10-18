@@ -36,3 +36,5 @@ backend/*.exe
 backend/tests/*.exe
 backend/*.o
 backend/tests/*.o
+backend/data/*.json
+backend/data/*.tmp
