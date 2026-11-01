@@ -1,62 +1,102 @@
+/* ==========================================================================
+   Hierarchy Explorer — Global Design Tokens & Typography
+   Complete Ice Blue Theme
+   ========================================================================== */
+
 :root {
-  color-scheme: dark;
+  color-scheme: light;
 
   /* Typography */
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 
-  /* Approved Brand Color Palette */
-  --brand-icy: #C0E6FD;       /* Icy blue: primary focal text & highlights */
-  --brand-muted: #80AAD3;     /* Muted blue: secondary text & soft icons */
-  --brand-medium: #5B86B6;    /* Medium blue: active borders & interaction accents */
-  --brand-denim: #3F6593;     /* Denim blue: structural borders & surface edges */
-  --brand-navy: #1B3554;      /* Deep navy: prominent surface cards & headers */
-  --brand-midnight: #000F22;  /* Midnight navy: root page background */
+  /* Ice Blue Theme Design Tokens */
+  --ice-bg-main: #DDF4FF;         /* Main background: light ice blue */
+  --ice-bg-secondary: #C7E8FA;    /* Secondary background: soft icy blue */
+  --ice-bg-card: #EFF9FF;         /* Card background: almost white with blue tint */
+  --ice-bg-canvas: #E8F7FF;       /* Canvas background */
+  --ice-canvas-grid: #C8E8F8;     /* Canvas grid: subtle */
+  --ice-accent-primary: #58A6D6;  /* Primary accent: glacier blue */
+  --ice-accent-secondary: #8CCFF0;/* Secondary accent: sky ice blue */
+  --ice-border: #A6D8F0;          /* Borders */
+  --ice-text-primary: #102C41;    /* Primary text: deep blue-black */
+  --ice-text-secondary: #45677F;  /* Secondary text */
+  --ice-hover: #B5E3F8;           /* Hover states */
+  --ice-selected: #A0D9F3;        /* Selected states */
 
-  /* Surface System (Dark-Only) */
-  --bg-page: var(--brand-midnight);
-  --bg-surface: var(--brand-navy);
-  --bg-surface-elevated: #213d61;
-  --bg-surface-subtle: #0d2238;
-  --bg-surface-sunken: #061424;
+  /* Semantic Aliases */
+  --brand-icy: var(--ice-accent-primary);
+  --brand-muted: var(--ice-text-secondary);
+  --brand-medium: var(--ice-accent-primary);
+  --brand-denim: var(--ice-border);
+  --brand-navy: var(--ice-bg-card);
+  --brand-midnight: var(--ice-bg-main);
+
+  /* Surface System (Light Ice Blue) */
+  --bg-page: var(--ice-bg-main);
+  --bg-surface: var(--ice-bg-card);
+  --bg-surface-elevated: #FFFFFF;
+  --bg-surface-subtle: var(--ice-bg-secondary);
+  --bg-surface-sunken: var(--ice-bg-canvas);
 
   /* Text & Labels */
-  --text-primary: #F0F7FF;    /* Near-white for primary high-contrast copy */
-  --text-highlight: var(--brand-icy);
-  --text-secondary: var(--brand-muted);
-  --text-dim: #5c7e9f;
+  --text-primary: var(--ice-text-primary);
+  --text-highlight: var(--ice-accent-primary);
+  --text-secondary: var(--ice-text-secondary);
+  --text-dim: #62879F;
 
   /* Borders & Dividers */
-  --border-subtle: rgba(128, 170, 211, 0.15);
-  --border-default: #28476d;
-  --border-strong: var(--brand-denim);
-  --border-active: var(--brand-medium);
+  --border-subtle: rgba(166, 216, 240, 0.6);
+  --border-default: var(--ice-border);
+  --border-strong: var(--ice-accent-primary);
+  --border-active: var(--ice-accent-primary);
 
   /* Interactive States */
-  --interactive-bg: rgba(27, 53, 84, 0.7);
-  --interactive-hover: rgba(63, 101, 147, 0.35);
-  --interactive-active: var(--brand-navy);
-  --interactive-selected: rgba(91, 134, 182, 0.22);
+  --interactive-bg: var(--ice-bg-secondary);
+  --interactive-hover: var(--ice-hover);
+  --interactive-active: var(--ice-selected);
+  --interactive-selected: var(--ice-selected);
 
   /* Focus Indicator */
-  --focus-ring: var(--brand-icy);
+  --focus-ring: var(--ice-accent-primary);
   --focus-ring-offset: 2px;
 
   /* Functional Status Indicators */
-  --status-online: #34d399;
-  --status-offline: #f87171;
+  --status-online: #059669;
+  --status-offline: #dc2626;
 
   /* Layout Constants */
   --radius-sm: 4px;
   --radius-md: 8px;
   --radius-lg: 10px;
-  --shadow-card: 0 4px 16px rgba(0, 7, 18, 0.45);
+  --shadow-card: 0 4px 16px rgba(16, 44, 65, 0.08);
 }
 
 * {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ice-border) var(--ice-bg-main);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--ice-bg-main);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--ice-border);
+  border-radius: var(--radius-sm);
+  border: 2px solid var(--ice-bg-main);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ice-accent-primary);
 }
 
 body {
@@ -73,6 +113,7 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  background-color: var(--bg-page);
 }
 
 /* Navbar */
@@ -81,12 +122,13 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 0.875rem 2rem;
-  background-color: rgba(0, 15, 34, 0.95);
+  background-color: rgba(221, 244, 255, 0.95);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border-default);
   position: sticky;
   top: 0;
   z-index: 50;
+  box-shadow: 0 2px 10px rgba(16, 44, 65, 0.05);
 }
 
 .navbar-brand {
@@ -102,9 +144,10 @@ body {
   width: 40px;
   height: 40px;
   border-radius: var(--radius-md);
-  background-color: var(--bg-surface);
-  border: 1px solid var(--border-strong);
-  color: var(--brand-icy);
+  background-color: var(--ice-bg-card);
+  border: 1px solid var(--border-default);
+  color: var(--ice-accent-primary);
+  box-shadow: 0 2px 6px rgba(16, 44, 65, 0.06);
 }
 
 .brand-title {
@@ -122,7 +165,7 @@ body {
 /* Mode Switcher */
 .mode-toggle-group {
   display: flex;
-  background-color: var(--bg-surface-sunken);
+  background-color: var(--ice-bg-secondary);
   padding: 3px;
   border-radius: var(--radius-md);
   border: 1px solid var(--border-default);
@@ -140,17 +183,19 @@ body {
   font-size: 0.85rem;
   font-weight: 500;
   cursor: pointer;
-  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  transition: all 0.2s ease;
 }
 
 .mode-btn.active {
-  background-color: var(--bg-surface);
+  background-color: var(--ice-bg-card);
   color: var(--text-primary);
   border-color: var(--border-active);
+  font-weight: 600;
+  box-shadow: 0 2px 6px rgba(16, 44, 65, 0.08);
 }
 
 .mode-btn:hover:not(.active) {
-  color: var(--text-highlight);
+  color: var(--text-primary);
   background-color: var(--interactive-hover);
 }
 
@@ -163,12 +208,13 @@ body {
   display: flex;
   align-items: center;
   gap: 0.55rem;
-  background-color: var(--bg-surface-sunken);
+  background-color: var(--ice-bg-card);
   padding: 0.4rem 0.75rem;
   border-radius: 20px;
   border: 1px solid var(--border-default);
   font-size: 0.78rem;
   color: var(--text-secondary);
+  box-shadow: 0 2px 6px rgba(16, 44, 65, 0.04);
 }
 
 .status-indicator-dot {
@@ -205,7 +251,7 @@ body {
 }
 
 .refresh-btn:hover:not(:disabled) {
-  color: var(--brand-icy);
+  color: var(--ice-accent-primary);
 }
 
 .refresh-btn:disabled {
@@ -256,7 +302,7 @@ body {
 }
 
 .stat-value.highlight {
-  color: var(--text-highlight);
+  color: var(--ice-accent-primary);
 }
 
 /* Workspace Grid */
@@ -319,10 +365,11 @@ body {
   gap: 0.45rem;
   font-size: 0.74rem;
   color: var(--text-secondary);
-  background-color: var(--bg-surface-sunken);
+  background-color: var(--ice-bg-card);
   border: 1px solid var(--border-default);
   padding: 0.25rem 0.6rem;
   border-radius: var(--radius-sm);
+  box-shadow: 0 1px 3px rgba(16, 44, 65, 0.04);
 }
 
 .legend-indicator {
@@ -332,18 +379,18 @@ body {
 }
 
 .legend-indicator.left {
-  background-color: var(--brand-icy);
+  background-color: var(--ice-accent-primary);
 }
 
 .legend-indicator.right {
-  background-color: var(--brand-muted);
+  background-color: var(--ice-accent-secondary);
 }
 
 .svg-container {
   width: 100%;
   min-height: 420px;
   display: flex;
-  background-color: var(--bg-surface-sunken);
+  background-color: var(--ice-bg-canvas);
   overflow-x: auto;
   overflow-y: hidden;
   position: relative;
@@ -363,7 +410,7 @@ body {
 }
 
 .tree-node-group:hover rect {
-  stroke: var(--brand-icy);
+  stroke: var(--ice-accent-primary);
 }
 
 /* Controls Sidebar */
@@ -397,12 +444,12 @@ body {
 
 .badge {
   font-size: 0.7rem;
-  background-color: rgba(91, 134, 182, 0.15);
-  color: var(--brand-icy);
-  border: 1px solid var(--border-strong);
+  background-color: var(--ice-bg-secondary);
+  color: #0E476B;
+  border: 1px solid var(--border-default);
   padding: 0.2rem 0.5rem;
   border-radius: var(--radius-sm);
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .traversal-buttons-grid {
@@ -412,13 +459,13 @@ body {
 }
 
 .traversal-btn {
-  background-color: var(--bg-surface-subtle);
+  background-color: var(--ice-bg-card);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   padding: 0.85rem;
   text-align: left;
   cursor: pointer;
-  transition: background-color 0.15s ease, border-color 0.15s ease;
+  transition: all 0.2s ease;
 }
 
 .traversal-btn:hover {
@@ -428,7 +475,8 @@ body {
 
 .traversal-btn.selected {
   background-color: var(--interactive-selected);
-  border-color: var(--brand-muted);
+  border-color: var(--border-active);
+  box-shadow: 0 2px 8px rgba(88, 166, 214, 0.25);
 }
 
 .btn-main {
@@ -447,11 +495,12 @@ body {
 .btn-tag {
   font-family: var(--font-mono);
   font-size: 0.74rem;
-  color: var(--brand-icy);
-  background-color: rgba(192, 230, 253, 0.1);
-  border: 1px solid rgba(192, 230, 253, 0.2);
+  color: #0E476B;
+  background-color: rgba(88, 166, 214, 0.15);
+  border: 1px solid rgba(88, 166, 214, 0.35);
   padding: 0.15rem 0.4rem;
   border-radius: var(--radius-sm);
+  font-weight: 600;
 }
 
 .btn-desc {
@@ -463,9 +512,9 @@ body {
 .academic-callout {
   margin-top: 1rem;
   padding: 0.85rem;
-  background-color: var(--bg-surface-sunken);
-  border: 1px solid var(--border-strong);
-  border-left: 3px solid var(--brand-muted);
+  background-color: var(--ice-bg-secondary);
+  border: 1px solid var(--border-default);
+  border-left: 3px solid var(--ice-accent-primary);
   border-radius: var(--radius-md);
   display: flex;
   gap: 0.6rem;
@@ -476,12 +525,12 @@ body {
 
 .callout-icon {
   font-size: 1.05rem;
-  color: var(--brand-muted);
+  color: var(--ice-accent-primary);
   flex-shrink: 0;
 }
 
 .callout-body strong {
-  color: var(--brand-icy);
+  color: #0E476B;
 }
 
 /* System Notes Card */
@@ -489,7 +538,7 @@ body {
   font-size: 0.85rem;
   font-weight: 600;
   margin-bottom: 0.75rem;
-  color: var(--text-highlight);
+  color: var(--text-primary);
 }
 
 .notes-list {
@@ -507,11 +556,11 @@ body {
 
 .notes-list code {
   font-family: var(--font-mono);
-  background-color: rgba(192, 230, 253, 0.08);
-  border: 1px solid rgba(192, 230, 253, 0.16);
+  background-color: var(--ice-bg-secondary);
+  border: 1px solid var(--border-default);
   padding: 0.1rem 0.35rem;
   border-radius: var(--radius-sm);
-  color: var(--brand-icy);
+  color: #0E476B;
 }
 
 /* App Footer */
@@ -519,13 +568,14 @@ body {
   text-align: center;
   padding: 1.5rem;
   border-top: 1px solid var(--border-default);
+  background-color: var(--ice-bg-card);
   font-size: 0.8rem;
   color: var(--text-secondary);
   margin-top: auto;
 }
 
 .app-footer strong {
-  color: var(--text-highlight);
+  color: #0E476B;
 }
 
 /* Visible Keyboard Focus States */
