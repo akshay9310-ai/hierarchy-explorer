@@ -99,9 +99,7 @@ export const NodeEditModal: React.FC<NodeEditModalProps> = ({
         if (onNodeUpdated) {
           onNodeUpdated(updates);
         }
-        setTimeout(() => {
-          onClose();
-        }, 700);
+        onClose();
       } else {
         setFeedback({
           type: 'error',

@@ -88,4 +88,8 @@ The Binary Tree engine is strictly isolated from the networking layer, allowing 
 3. The engine performs insertion, lookup, traversal, or metric calculation without depending on HTTP or JSON.
 4. The HTTP layer serializes engine results into the DTO shapes documented in `api-contract.md`.
 
-Both hierarchies are initialized from deterministic fixtures when the process starts. Insertions are intentionally in memory and are discarded on server restart. Binary tree height measures the actual LCRS topology, including right-sibling links; it is not the conceptual hierarchy depth.
+Both hierarchies load validated JSON snapshots on startup, falling back to deterministic fixtures when no save exists. Mutations operate on a candidate tree, atomically commit its JSON snapshot, then swap it into memory. Failed validation or storage leaves the active tree unchanged. Deletion detaches the selected member's right-sibling link before destroying its descendant subtree, preserving peer branches.
+
+The React application fetches hierarchy data and statistics together and refreshes both after mutations. It requests traversal sequences from C++, while local state controls animation, speed, and selection. Search is debounced; stale responses are ignored when the mode, query, or hierarchy changes. Mode switching and tree updates reset playback. Import/export uses the same hierarchy DTO as retrieval.
+
+Binary tree height measures the actual LCRS topology, including right-sibling links; it is not the conceptual hierarchy depth.

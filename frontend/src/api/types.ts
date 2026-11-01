@@ -134,4 +134,3 @@ export interface DescendantImpact {
   descendants: TreeNodeDto[];
   isRoot: boolean;
 }
-

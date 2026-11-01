@@ -52,6 +52,8 @@ public:
     int getHeight() const;
     bool isEmpty() const;
     void clear();
+    bool removeMember(const std::string& id);
+    void swap(BinaryTree& other);
 
 private:
     TreeNode* root;

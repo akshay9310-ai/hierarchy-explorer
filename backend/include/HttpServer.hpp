@@ -32,7 +32,7 @@ typedef int SOCKET;
  */
 class HttpServer {
 public:
-    explicit HttpServer(int port = 8080);
+    explicit HttpServer(int port = 8080, const std::string& dataDirectory = "");
     ~HttpServer();
 
     // Prevent copy/assignment
@@ -58,6 +58,10 @@ private:
     std::string configuredOrigin;
     BinaryTree orgTree;
     BinaryTree familyTree;
+    std::string dataDirectory;
+    bool readOnlyStorage = false;
+    bool saveTree(const std::string& mode, const BinaryTree& tree);
+    void importTree(const std::string& body, const std::string& mode, BinaryTree& tree);
 
     void handleClient(SOCKET clientSocket);
     void initializeFixtures();

@@ -2,8 +2,19 @@
 #include <cassert>
 #include <iostream>
 #include <string>
+#include "FileStorage.hpp"
+#include <cstdlib>
+#include <fstream>
 
 namespace {
+
+bool removeTestDirectory(const std::string& path) {
+#ifdef _WIN32
+    return RemoveDirectoryA(path.c_str()) != 0;
+#else
+    return rmdir(path.c_str()) == 0;
+#endif
+}
 
 void expectContains(const std::string& response, const std::string& expected) {
     assert(response.find(expected) != std::string::npos);
@@ -68,6 +79,99 @@ void testErrors() {
                    "HTTP/1.1 405 Method Not Allowed");
     expectContains(server.routeRequest("GET", "/api/unknown"), "HTTP/1.1 404 Not Found");
     std::cout << "[PASS] API validation and error responses verified\n";
+}
+
+std::string bodyOf(const std::string& response) {
+    return response.substr(response.find("\r\n\r\n") + 4);
+}
+
+void testManagementAndImport() {
+    HttpServer server(0);
+    const std::string original = bodyOf(server.routeRequest("GET", "/api/hierarchy/export?mode=org"));
+    expectContains(server.routeRequest("PATCH", "/api/hierarchy/nodes/org-vp-tech?mode=org", "{\"name\":\"Jane \\u2603\",\"department\":\"\"}"), "200 OK");
+    expectContains(server.routeRequest("GET", "/api/hierarchy/search?mode=org&q=jAnE"), "org-vp-tech");
+    expectContains(server.routeRequest("GET", "/api/hierarchy/search?mode=org&q=NO_MATCH"), "\"ids\":[]");
+    expectContains(server.routeRequest("PATCH", "/api/hierarchy/nodes/org-ceo?mode=org", "{\"name\":\" \"}"), "400 Bad Request");
+    expectContains(server.routeRequest("PATCH", "/api/hierarchy/nodes/org-ceo?mode=org", "{\"parentId\":\"org-vp-tech\"}"), "400 Bad Request");
+    expectContains(server.routeRequest("DELETE", "/api/hierarchy/nodes/missing?mode=org"), "404 Not Found");
+    expectContains(server.routeRequest("DELETE", "/api/hierarchy/nodes/org-vp-tech?mode=org"), "200 OK");
+    const std::string remaining = server.routeRequest("GET", "/api/hierarchy?mode=org");
+    assert(remaining.find("org-lead-arch") == std::string::npos);
+    assert(remaining.find("org-vp-tech") == std::string::npos);
+    expectContains(remaining, "\"leftChildId\":\"org-vp-ops\"");
+    expectContains(server.routeRequest("GET", "/api/hierarchy/stats?mode=org"), "\"totalMembers\":2");
+    expectContains(server.routeRequest("POST", "/api/hierarchy/import?mode=org", original), "200 OK");
+    assert(bodyOf(server.routeRequest("GET", "/api/hierarchy?mode=org")) == original);
+    for (const std::string type : {"preorder", "inorder", "postorder"})
+        expectContains(server.routeRequest("GET", "/api/hierarchy/traverse?mode=org&type=" + type), "\"totalNodes\":4");
+    const std::string bad = "{\"mode\":\"org\",\"rootId\":\"r\",\"nodes\":[{\"id\":\"r\",\"name\":\"R\",\"role\":\"Root\",\"parentId\":null},{\"id\":\"x\",\"name\":\"X\",\"role\":\"Child\",\"parentId\":\"x\"}]}";
+    expectContains(server.routeRequest("POST", "/api/hierarchy/import?mode=org", bad), "400 Bad Request");
+    expectContains(server.routeRequest("POST", "/api/hierarchy/import?mode=family", original), "400 Bad Request");
+    expectContains(server.routeRequest("POST", "/api/hierarchy/import?mode=org", "{\"mode\":\"org\",\"mode\":\"org\"}"), "400 Bad Request");
+    assert(bodyOf(server.routeRequest("GET", "/api/hierarchy?mode=org")) == original);
+    expectContains(server.routeRequest("DELETE", "/api/hierarchy/nodes/org-vp-ops?mode=org"), "200 OK");
+    expectContains(server.routeRequest("GET", "/api/hierarchy?mode=org"), "org-lead-arch");
+    expectContains(server.routeRequest("DELETE", "/api/hierarchy/nodes/org-ceo?mode=org"), "\"nodes\":[]");
+    expectContains(server.routeRequest("POST", "/api/hierarchy/member", "{\"mode\":\"org\",\"id\":\"new-root\",\"name\":\"Root\",\"role\":\"Leader\",\"parentId\":\"\",\"relation\":\"child\"}"), "201 Created");
+    expectContains(server.routeRequest("GET", "/api/hierarchy?mode=org"), "\"rootId\":\"new-root\"");
+    expectContains(server.routeRequest("GET", "/api/hierarchy/stats?mode=family"), "\"totalMembers\":4");
+    const std::string shuffled = "{\"mode\":\"org\",\"rootId\":\"r\",\"nodes\":[{\"id\":\"a\",\"name\":\"A\",\"role\":\"Child\",\"parentId\":\"p\"},{\"id\":\"p\",\"name\":\"P\",\"role\":\"Parent\",\"parentId\":\"r\"},{\"id\":\"b\",\"name\":\"B\",\"role\":\"Child\",\"parentId\":\"p\"},{\"id\":\"r\",\"name\":\"R\",\"role\":\"Root\",\"parentId\":null}]}";
+    expectContains(server.routeRequest("POST", "/api/hierarchy/import?mode=org", shuffled), "200 OK");
+    const std::string sorted = server.routeRequest("GET", "/api/hierarchy?mode=org");
+    expectContains(sorted, "\"leftChildId\":\"a\"");
+    expectContains(sorted, "\"rightSiblingId\":\"b\"");
+    std::cout << "[PASS] Edit, search, branch deletion, root recreation, and atomic import verified\n";
+}
+
+void testPersistence() {
+#ifdef _WIN32
+    char temporary[MAX_PATH];
+    assert(GetTempPathA(MAX_PATH, temporary));
+    const std::string directory = std::string(temporary) + "hierarchy-test-" + std::to_string(GetCurrentProcessId()) + "-" + std::to_string(GetTickCount());
+#else
+    char temporary[] = "/tmp/hierarchy-test-XXXXXX";
+    char* created = mkdtemp(temporary);
+    assert(created);
+    const std::string directory(created);
+#endif
+    {
+        HttpServer server(0, directory);
+        expectContains(server.routeRequest("PATCH", "/api/hierarchy/nodes/org-ceo?mode=org", "{\"name\":\"Saved Leader\"}"), "200 OK");
+        expectContains(server.routeRequest("DELETE", "/api/hierarchy/nodes/fam-patriarch?mode=family"), "200 OK");
+        expectContains(server.routeRequest("PUT", "/api/hierarchy/member", "{\"mode\":\"org\",\"id\":\"org-vp-ops\",\"name\":\"Saved Operations\",\"role\":\"VP Operations\"}"), "200 OK");
+        expectContains(server.routeRequest("DELETE", "/api/hierarchy/member?mode=org&id=org-lead-arch"), "200 OK");
+        expectContains(server.routeRequest("POST", "/api/hierarchy/member", "{\"mode\":\"org\",\"id\":\"persisted-child\",\"name\":\"Saved Child\",\"role\":\"Tester\",\"parentId\":\"org-vp-tech\",\"relation\":\"child\"}"), "201 Created");
+    }
+    {
+        HttpServer restarted(0, directory);
+        expectContains(restarted.routeRequest("GET", "/api/hierarchy?mode=org"), "Saved Leader");
+        expectContains(restarted.routeRequest("GET", "/api/hierarchy?mode=family"), "\"nodes\":[]");
+        const std::string restored = restarted.routeRequest("GET", "/api/hierarchy?mode=org");
+        expectContains(restored, "Saved Operations");
+        expectContains(restored, "persisted-child");
+        assert(restored.find("org-lead-arch") == std::string::npos);
+        // Prevent atomic replacement to simulate a failed disk commit.
+        assert(std::remove((directory + "/org.json").c_str()) == 0);
+        assert(FileStorage::createDirectory(directory + "/org.json"));
+        expectContains(restarted.routeRequest("PATCH", "/api/hierarchy/nodes/org-ceo?mode=org", "{\"name\":\"Unsaved\"}"), "500 Internal Server Error");
+        expectContains(restarted.routeRequest("GET", "/api/hierarchy?mode=org"), "Saved Leader");
+        expectContains(restarted.routeRequest("PUT", "/api/hierarchy/member", "{\"mode\":\"org\",\"id\":\"org-ceo\",\"name\":\"Unsaved\",\"role\":\"CEO\"}"), "500 Internal Server Error");
+        expectContains(restarted.routeRequest("DELETE", "/api/hierarchy/member?mode=org&id=org-vp-ops"), "500 Internal Server Error");
+        assert(bodyOf(restarted.routeRequest("GET", "/api/hierarchy?mode=org")) == bodyOf(restored));
+        assert(removeTestDirectory(directory + "/org.json"));
+        std::remove((directory + "/org.json.tmp").c_str());
+    }
+    {
+        std::ofstream corrupt(directory + "/org.json"); corrupt << "invalid json";
+    }
+    {
+        HttpServer protectedServer(0, directory);
+        expectContains(protectedServer.routeRequest("PATCH", "/api/hierarchy/nodes/org-ceo?mode=org", "{\"name\":\"Overwrite\"}"), "500 Internal Server Error");
+    }
+    assert(std::remove((directory + "/org.json").c_str()) == 0);
+    assert(std::remove((directory + "/family.json").c_str()) == 0);
+    assert(removeTestDirectory(directory));
+    std::cout << "[PASS] Restart persistence, empty saves, write rollback, and damaged-file protection verified\n";
 }
 
 void testUpdateEndpoint() {
@@ -166,12 +270,17 @@ void testCorsAndCloudHeaders() {
     const std::string localOpt = server.routeRequest("OPTIONS", "/api/hierarchy", "", "http://localhost:5173");
     expectContains(localOpt, "HTTP/1.1 204 No Content");
     expectContains(localOpt, "Access-Control-Allow-Origin: http://localhost:5173");
-    expectContains(localOpt, "Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
+    expectContains(localOpt, "Access-Control-Allow-Methods: GET, POST, PATCH, PUT, DELETE, OPTIONS");
 
     // 2. Vercel deployment origin reflects
     const std::string vercelOpt = server.routeRequest("OPTIONS", "/api/hierarchy/member", "", "https://hierarchy-explorer.vercel.app");
     expectContains(vercelOpt, "HTTP/1.1 204 No Content");
     expectContains(vercelOpt, "Access-Control-Allow-Origin: https://hierarchy-explorer.vercel.app");
+    const std::string cloud = "https://hierarchy-explorer.vercel.app";
+    for (const std::string target : {"/api/hierarchy/search?mode=org&q=sarah", "/api/hierarchy/export?mode=org"})
+        expectContains(server.routeRequest("GET", target, "", cloud), "Access-Control-Allow-Origin: " + cloud);
+    expectContains(server.routeRequest("PATCH", "/api/hierarchy/nodes/org-ceo?mode=org", "{\"name\":\"Cloud Leader\"}", cloud), "Access-Control-Allow-Origin: " + cloud);
+    expectContains(server.routeRequest("POST", "/api/hierarchy/import?mode=org", "invalid", cloud), "Access-Control-Allow-Origin: " + cloud);
 
     // 3. Status endpoint reflects cloud networking
     const std::string status = server.routeRequest("GET", "/api/status", "", "http://localhost:5173");
@@ -188,6 +297,8 @@ int main() {
     testReadEndpoints();
     testInsertionAndIsolation();
     testErrors();
+    testManagementAndImport();
+    testPersistence();
     testUpdateEndpoint();
     testDeleteEndpoint();
     testCorsAndCloudHeaders();
