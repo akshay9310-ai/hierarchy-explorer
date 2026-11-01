@@ -125,7 +125,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
               <path
                 d="M 30 0 L 0 0 0 30"
                 fill="none"
-                stroke="rgba(128, 170, 211, 0.08)"
+                stroke="#C8E8F8"
                 strokeWidth="1"
               />
             </pattern>
@@ -140,7 +140,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
               markerHeight="6"
               orient="auto-start-reverse"
             >
-              <path d="M 0 1 L 9 5 L 0 9 z" fill="#C0E6FD" />
+              <path d="M 0 1 L 9 5 L 0 9 z" fill="#58A6D6" />
             </marker>
 
             {/* Right-Sibling Arrow Marker (Muted Blue) */}
@@ -153,12 +153,12 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
               markerHeight="6"
               orient="auto-start-reverse"
             >
-              <path d="M 0 1 L 9 5 L 0 9 z" fill="#80AAD3" />
+              <path d="M 0 1 L 9 5 L 0 9 z" fill="#8CCFF0" />
             </marker>
           </defs>
 
           {/* Grid Canvas Background */}
-          <rect width="100%" height="100%" fill="var(--bg-surface-sunken)" />
+          <rect width="100%" height="100%" fill="#E8F7FF" />
           <rect width="100%" height="100%" fill="url(#grid)" />
 
           {/* Connectors Layer */}
@@ -167,14 +167,15 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
             const isOriginatingFromSelected = selectedNodeId === edge.sourceId;
             const isOriginatingFromTraversal = currentTraversalNodeId === edge.sourceId;
 
-            let strokeColor = isChild ? '#C0E6FD' : '#80AAD3';
+            let strokeColor = isChild ? '#58A6D6' : '#8CCFF0';
             let strokeWidth = '2.0';
 
             if (isOriginatingFromTraversal) {
               strokeWidth = '2.8';
-              strokeColor = '#C0E6FD';
+              strokeColor = '#58A6D6';
             } else if (isOriginatingFromSelected) {
               strokeWidth = '2.5';
+              strokeColor = isChild ? '#58A6D6' : '#8CCFF0';
             }
 
             const markerId = isChild ? 'url(#arrow-child)' : 'url(#arrow-sibling)';
@@ -195,7 +196,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
                 <text
                   x={edge.labelX}
                   y={edge.labelY}
-                  fill={strokeColor}
+                  fill={isChild ? "#0E476B" : "#45677F"}
                   fontSize="10"
                   fontWeight="600"
                   textAnchor="middle"
@@ -214,23 +215,23 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
             const isVisited = visitedNodeIds.includes(pos.node.id);
             const isHighlighted = highlightedNodeIds.includes(pos.node.id);
 
-            let strokeColor = '#3F6593';
-            let strokeWidth = '1.5';
-            let fillColor = 'var(--bg-surface)';
+            let strokeColor = '#A6D8F0';
+            let strokeWidth = '1.8';
+            let fillColor = '#EFF9FF';
 
             if (isSelected) {
-              strokeColor = '#C0E6FD';
+              strokeColor = '#58A6D6';
               strokeWidth = '2.5';
-              fillColor = '#213d61'; // Elevated dark navy surface tint
+              fillColor = '#A0D9F3';
             } else if (isCurrentTraversal) {
-              strokeColor = '#C0E6FD';
+              strokeColor = '#58A6D6';
               strokeWidth = '2.5';
-              fillColor = '#1f3c60';
+              fillColor = '#B5E3F8';
             } else if (isVisited) {
-              strokeColor = '#5B86B6';
+              strokeColor = '#58A6D6';
               strokeWidth = '1.8';
             } else if (isHighlighted) {
-              strokeColor = '#5B86B6';
+              strokeColor = '#58A6D6';
               strokeWidth = '2';
             }
 
@@ -268,7 +269,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
                   fill={fillColor}
                   stroke={strokeColor}
                   strokeWidth={strokeWidth}
-                  filter={isSelected || isCurrentTraversal ? 'drop-shadow(0 0 10px rgba(192, 230, 253, 0.4))' : 'drop-shadow(0 4px 10px rgba(0, 7, 18, 0.45))'}
+                  filter={isSelected || isCurrentTraversal ? 'drop-shadow(0 2px 8px rgba(88, 166, 214, 0.35))' : 'drop-shadow(0 2px 6px rgba(16, 44, 65, 0.08))'}
                 />
 
                 {/* Selected Accent Indicator Bar on Left */}
@@ -278,7 +279,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
                     y="0"
                     width="4"
                     height={pos.height}
-                    fill="#C0E6FD"
+                    fill="#58A6D6"
                     rx="2"
                   />
                 )}
@@ -292,14 +293,14 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
                       width="28"
                       height="18"
                       rx="4"
-                      fill="#000F22"
-                      stroke="#C0E6FD"
+                      fill="#58A6D6"
+                      stroke="#428BB8"
                       strokeWidth="1.2"
                     />
                     <text
                       x={pos.width - 20}
                       y="19"
-                      fill="#C0E6FD"
+                      fill="#FFFFFF"
                       fontSize="10"
                       fontWeight="700"
                       textAnchor="middle"
@@ -316,7 +317,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
                     cx={pos.width - 12}
                     cy="14"
                     r="3.5"
-                    fill="#5B86B6"
+                    fill="#58A6D6"
                     opacity="0.8"
                   />
                 )}
@@ -325,7 +326,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
                 <text
                   x={pos.width / 2}
                   y={nameY}
-                  fill={isSelected || isCurrentTraversal ? '#C0E6FD' : '#F0F7FF'}
+                  fill="#102C41"
                   fontSize="13"
                   fontWeight="600"
                   textAnchor="middle"
@@ -338,7 +339,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
                 <text
                   x={pos.width / 2}
                   y={roleY}
-                  fill="#80AAD3"
+                  fill="#45677F"
                   fontSize="11"
                   textAnchor="middle"
                   style={{ userSelect: 'none' }}
@@ -351,7 +352,7 @@ export const TreeCanvas: React.FC<TreeCanvasProps> = ({
                   <text
                     x={pos.width / 2}
                     y={deptY}
-                    fill="#5B86B6"
+                    fill="#0E476B"
                     fontSize="9.5"
                     fontWeight="500"
                     textAnchor="middle"

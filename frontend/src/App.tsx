@@ -444,14 +444,14 @@ export function App() {
         </header>
 
         {isHierarchyLoading && (
-          <div className="system-loading-banner" style={{ margin: '0 0 1rem 0', padding: '0.6rem 1rem', background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.3)', borderRadius: '8px', color: '#93c5fd', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#60a5fa' }} />
+          <div className="system-loading-banner">
+            <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--brand-icy)' }} />
             <span>Loading authoritative tree structure from C++ backend...</span>
           </div>
         )}
 
         {hierarchyError && (
-          <div className="system-error-banner" style={{ margin: '0 0 1rem 0', padding: '0.6rem 1rem', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: '8px', color: '#fca5a5', fontSize: '0.85rem' }}>
+          <div className="system-error-banner">
             <strong>Backend Notice:</strong> {hierarchyError} (Displaying client demo hierarchy).
           </div>
         )}
